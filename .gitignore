@@ -1,0 +1,40 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# MicroVM disk images, kernels, and rootfs
+*.img
+*.iso
+*.qcow2
+*.raw
+*.vmdk
+*.dmg
+/vm/images/
+/vm/kernel/
+/vm/rootfs/
+
+# UNIX sockets and IPC descriptors
+*.sock
+*.socket
+/tmp/
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor and IDE caches
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs and test artifacts
+*.log
+/agents/logs/test_reports/*.dump
+/agents/logs/test_reports/*.rgba
