@@ -118,12 +118,99 @@ func printUsage() {
     """)
 }
 
+// MARK: - POSIX FD Passing Helper
+func sendFd(sock: Int32, data: UnsafeRawPointer, count: Int, fdToPass: Int32) -> Int {
+    guard fdToPass >= 0 else { return -1 }
+    var iov = iovec(iov_base: UnsafeMutableRawPointer(mutating: data), iov_len: count)
+    var cmsgBuf = [UInt8](repeating: 0, count: 16)
+    cmsgBuf.withUnsafeMutableBytes { raw in
+        let cmsg = raw.bindMemory(to: cmsghdr.self).baseAddress!
+        cmsg.pointee.cmsg_len = 16
+        cmsg.pointee.cmsg_level = SOL_SOCKET
+        cmsg.pointee.cmsg_type = SCM_RIGHTS
+        let dataPtr = raw.baseAddress!.advanced(by: 12).bindMemory(to: Int32.self, capacity: 1)
+        dataPtr.pointee = fdToPass
+    }
+
+    var msg = msghdr()
+    msg.msg_iov = withUnsafeMutablePointer(to: &iov) { $0 }
+    msg.msg_iovlen = 1
+    return cmsgBuf.withUnsafeMutableBytes { raw in
+        msg.msg_control = raw.baseAddress
+        msg.msg_controllen = socklen_t(raw.count)
+        return sendmsg(sock, &msg, 0)
+    }
+}
+
+func forwardWaylandBytes(hostSock: Int32, buffer: UnsafePointer<UInt8>, count: Int) {
+    var offset = 0
+    while offset < count {
+        let remaining = count - offset
+        if remaining < 8 {
+            _ = buffer.advanced(by: offset).withMemoryRebound(to: UInt8.self, capacity: remaining) { ptr in
+                write(hostSock, ptr, remaining)
+            }
+            break
+        }
+
+        let word2 = buffer.advanced(by: offset + 4).withMemoryRebound(to: UInt32.self, capacity: 1) { $0.pointee }
+        let opcode = UInt16(word2 & 0xFFFF)
+        let msgLen = Int(word2 >> 16)
+
+        if msgLen < 8 || msgLen > remaining {
+            _ = buffer.advanced(by: offset).withMemoryRebound(to: UInt8.self, capacity: remaining) { ptr in
+                write(hostSock, ptr, remaining)
+            }
+            break
+        }
+
+        let isCreatePool = (opcode == 0 && msgLen == 16 && remaining >= 16 && {
+            let poolSize = buffer.advanced(by: offset + 12).withMemoryRebound(to: UInt32.self, capacity: 1) { $0.pointee }
+            return poolSize >= 1024
+        }())
+
+        if isCreatePool {
+            let rawPoolSize = buffer.advanced(by: offset + 12).withMemoryRebound(to: UInt32.self, capacity: 1) { $0.pointee }
+            // Bounds check poolSize (max 256 MB) to prevent excessive disk/memory allocation
+            let boundedPoolSize = min(rawPoolSize, 256 * 1024 * 1024)
+            if let template = strdup("/tmp/niri_shm_XXXXXX") {
+                let hostFd = mkstemp(template)
+                unlink(template)
+                free(template)
+                if hostFd >= 0 {
+                    ftruncate(hostFd, off_t(boundedPoolSize))
+                    print("[BRIDGE] Intercepted wl_shm.create_pool(size=\(boundedPoolSize)), injecting host FD \(hostFd)")
+                    fflush(stdout)
+                    _ = sendFd(sock: hostSock, data: buffer.advanced(by: offset), count: msgLen, fdToPass: hostFd)
+                    close(hostFd)
+                } else {
+                    fputs("[BRIDGE] Failed to create temporary anonymous SHM file: errno \(errno)\n", stderr)
+                }
+            }
+        } else {
+            _ = buffer.advanced(by: offset).withMemoryRebound(to: UInt8.self, capacity: msgLen) { ptr in
+                write(hostSock, ptr, msgLen)
+            }
+        }
+
+        offset += msgLen
+    }
+}
+
 // MARK: - Bidirectional Socket Forwarder
-func bridgeSocket(clientFd: Int32, targetSocketPath: String) {
+func bridgeSocket(connection: VZVirtioSocketConnection, targetSocketPath: String) {
+    let clientFd = connection.fileDescriptor
+    let clientFlags = fcntl(clientFd, F_GETFL)
+    print("[BRIDGE] clientFd=\(clientFd), flags=\(clientFlags), isNonBlocking=\((clientFlags & O_NONBLOCK) != 0)")
+    fflush(stdout)
+    // Ensure blocking I/O for worker threads
+    if (clientFlags & O_NONBLOCK) != 0 {
+        _ = fcntl(clientFd, F_SETFL, clientFlags & ~O_NONBLOCK)
+    }
+
     let hostSock = socket(AF_UNIX, SOCK_STREAM, 0)
     guard hostSock >= 0 else {
         fputs("[BRIDGE] Failed to create AF_UNIX socket: \(errno)\n", stderr)
-        close(clientFd)
         return
     }
 
@@ -133,7 +220,6 @@ func bridgeSocket(clientFd: Int32, targetSocketPath: String) {
     guard pathLen < MemoryLayout.size(ofValue: addr.sun_path) else {
         fputs("[BRIDGE] Wayland socket path too long\n", stderr)
         close(hostSock)
-        close(clientFd)
         return
     }
 
@@ -150,7 +236,6 @@ func bridgeSocket(clientFd: Int32, targetSocketPath: String) {
     if connectRes < 0 {
         fputs("[BRIDGE] Failed to connect to Wayland socket at \(targetSocketPath): \(errno)\n", stderr)
         close(hostSock)
-        close(clientFd)
         return
     }
 
@@ -158,25 +243,27 @@ func bridgeSocket(clientFd: Int32, targetSocketPath: String) {
 
     // Thread 1: vsock -> host UNIX socket
     DispatchQueue.global(qos: .userInteractive).async {
+        _ = connection // Retain connection
         var buffer = [UInt8](repeating: 0, count: 65536)
         while true {
             let bytesRead = read(clientFd, &buffer, buffer.count)
-            if bytesRead <= 0 { break }
-            var written = 0
-            while written < bytesRead {
-                let n = buffer.withUnsafeBytes { ptr in
-                    write(hostSock, ptr.baseAddress!.advanced(by: written), bytesRead - written)
-                }
-                if n <= 0 { break }
-                written += n
+            if bytesRead <= 0 {
+                fputs("[BRIDGE] Thread 1 read from vsock ended: \(bytesRead), errno=\(errno)\n", stderr)
+                fflush(stderr)
+                break
+            }
+            print("[BRIDGE] Read \(bytesRead) bytes from vsock, forwarding to hostSock")
+            fflush(stdout)
+            buffer.withUnsafeBytes { ptr in
+                forwardWaylandBytes(hostSock: hostSock, buffer: ptr.bindMemory(to: UInt8.self).baseAddress!, count: bytesRead)
             }
         }
         close(hostSock)
-        close(clientFd)
     }
 
     // Thread 2: host UNIX socket -> vsock
     DispatchQueue.global(qos: .userInteractive).async {
+        _ = connection // Retain connection
         var buffer = [UInt8](repeating: 0, count: 65536)
         while true {
             let bytesRead = read(hostSock, &buffer, buffer.count)
@@ -190,24 +277,26 @@ func bridgeSocket(clientFd: Int32, targetSocketPath: String) {
                 written += n
             }
         }
-        close(hostSock)
-        close(clientFd)
     }
 }
 
 // MARK: - VZVirtioSocketListenerDelegate
 class VsockBridgeDelegate: NSObject, VZVirtioSocketListenerDelegate {
     let waylandSocketPath: String
+    var connections: [VZVirtioSocketConnection] = []
+    let lock = NSLock()
 
     init(waylandSocketPath: String) {
         self.waylandSocketPath = waylandSocketPath
         super.init()
     }
 
-    func listener(_ listener: VZVirtioSocketListener, shouldAcceptNewConnection connection: VZVirtioSocketConnection) -> Bool {
-        let fd = connection.fileDescriptor
+    func listener(_ listener: VZVirtioSocketListener, shouldAcceptNewConnection connection: VZVirtioSocketConnection, from socketDevice: VZVirtioSocketDevice) -> Bool {
         print("[VSOCK] New connection on vsock port \(connection.destinationPort) from guest CID \(connection.sourcePort)")
-        bridgeSocket(clientFd: fd, targetSocketPath: self.waylandSocketPath)
+        lock.lock()
+        connections.append(connection)
+        lock.unlock()
+        bridgeSocket(connection: connection, targetSocketPath: self.waylandSocketPath)
         return true
     }
 }
@@ -288,14 +377,14 @@ do {
 
 let vm = VZVirtualMachine(configuration: vmConfig)
 
-// Set up vsock listener
-let vsockDelegate = VsockBridgeDelegate(waylandSocketPath: config.waylandSocketPath)
-let listener = VZVirtioSocketListener()
-listener.delegate = vsockDelegate
+// Set up vsock listener strongly retained to avoid ARC deallocation
+var g_vsockDelegate: VsockBridgeDelegate? = VsockBridgeDelegate(waylandSocketPath: config.waylandSocketPath)
+var g_vsockListener: VZVirtioSocketListener? = VZVirtioSocketListener()
+g_vsockListener?.delegate = g_vsockDelegate
 
-if let socketDevice = vm.socketDevices.first as? VZVirtioSocketDevice {
+if let socketDevice = vm.socketDevices.first as? VZVirtioSocketDevice, let listener = g_vsockListener {
     socketDevice.setSocketListener(listener, forPort: config.vsockPort)
-    print("[VSOCK] virtio-vsock listener attached to port \(config.vsockPort)")
+    print("[VSOCK] virtio-vsock listener attached to port \(config.vsockPort) (target: \(config.waylandSocketPath))")
 }
 
 print("""

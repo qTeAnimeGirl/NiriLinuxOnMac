@@ -1,0 +1,21 @@
+[package]
+name = "niri-guest"
+version = "0.1.0"
+edition = "2021"
+authors = ["Niri VM & Graphics Bridge Systems Engineer"]
+description = "Static Linux guest runtime binaries for Niri MicroVM on Apple Silicon"
+
+[workspace]
+
+[[bin]]
+name = "wayland_window"
+path = "src/wayland_window.rs"
+
+[[bin]]
+name = "niri_vsock_guest"
+path = "src/vsock_guest.rs"
+
+[dependencies]
+libc = "0.2"
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client"] }

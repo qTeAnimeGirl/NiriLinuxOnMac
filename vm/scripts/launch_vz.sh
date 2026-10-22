@@ -13,6 +13,8 @@ if [[ ! -f "${BIN_PATH}" || "${REPO_ROOT}/vm/host/microvm_launcher.swift" -nt "$
     echo "[BUILD] Compiling Apple Virtualization launcher..."
     mkdir -p "${REPO_ROOT}/target"
     swiftc -O "${REPO_ROOT}/vm/host/microvm_launcher.swift" -o "${BIN_PATH}"
+    echo "[SIGN] Signing launcher with Virtualization entitlements..."
+    codesign --force --sign - --entitlements "${REPO_ROOT}/vm/host/entitlements.plist" "${BIN_PATH}"
 fi
 
 # Ensure shared SHM directory exists

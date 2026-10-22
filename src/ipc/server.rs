@@ -146,6 +146,12 @@ impl Drop for IpcServer {
 }
 
 fn socket_dir() -> PathBuf {
+    if let Ok(dir) = env::var("XDG_RUNTIME_DIR") {
+        let path = PathBuf::from(dir);
+        if path.is_dir() {
+            return path;
+        }
+    }
     BaseDirs::new()
         .as_ref()
         .and_then(|x| x.runtime_dir())
