@@ -193,6 +193,7 @@ public struct LinuxTerminalView: View {
 
                         quickButton("pacman -Sy")
                         quickButton("install-firefox")
+                        quickButton("pacman -S --overwrite '*' firefox")
                         quickButton("df -h /mnt/storage")
                         quickButton("wayland-run wayland_window &")
                         quickButton("uname -a")
