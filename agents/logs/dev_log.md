@@ -126,3 +126,30 @@
   - `swiftc -warnings-as-errors`: 0 warnings, 0 errors.
   - `codesign --verify --deep --strict dist/Niri.app`: 0 errors.
 - **Triple-Gate Sign-off**: Certified in `PR_006_qa_report.md`, `PR_006_security_audit.md`, and `PR_006_approval.md`. Cleared for merge to `dev` and promotion to `main`.
+
+### [2026-10-22T04:15:00+01:00] Milestone 8 - Persistent Virtual Disk Storage, OverlayFS Integration, VM Manager GUI, & SwiftTerm Terminal
+- **Persistent Storage Pipeline (`vm/guest/init.sh`, `vm/scripts/install_arch_assets.sh`)**:
+  - Attached VirtIO block device `/dev/vda` using `VZDiskImageStorageDeviceAttachment`.
+  - Added dynamic formatting logic in `/init`: automatically runs `/usr/bin/mkfs.ext4 -F -m 1 /dev/vda` on fresh disks and mounts at `/mnt/storage`.
+  - Integrated `overlay.ko` and activated OverlayFS on `/usr`, `/var`, `/etc`, `/root`, and bind-mounted `/home`.
+  - Included `util-linux-libs` (`libblkid.so.1`, `libuuid.so.1`) and `file` (`libmagic.so.1`) in core package list so `mkfs.ext4` works without missing shared libraries.
+  - Verified reboot persistence: `mkfs.ext4` is skipped on reboot; OverlayFS transparently restores and retains all pacman package installations and files across reboots.
+- **Dedicated VM Manager GUI (`apps/niri_mac_gui/Sources/Views/VMManagerView.swift`)**:
+  - Live VM hardware overview (vCPUs, RAM, Disk, Port, Cold boot time).
+  - Storage section with active disk stats, capacity, physical APFS usage, and savings ratio.
+  - Disk Creation screen: name field, capacity presets (10GB, 20GB, 40GB, 64GB, 128GB) and custom slider. Uses instant APFS sparse file creation via `ftruncate`.
+  - Disks list with actions: Activate / Select, Wipe Storage (Factory Reset), Delete Disk with safety checks.
+- **Full Proper Terminal Emulator (`apps/niri_mac_gui/Sources/Views/LinuxTerminalView.swift`)**:
+  - Replaced rudimentary text view with Miguel de Icaza's `SwiftTerm` library.
+  - Created `SwiftTerminalRepresentable: NSViewRepresentable` wrapping `TerminalView` and conforming to `TerminalViewDelegate`.
+  - Enabled true VT100/Xterm ANSI sequences, colors, full-screen TUIs (`nano`, `vi`, `htop`, `top`, `less`), arrow keys, Ctrl+C, tab autocompletion, text selection, and resize handling.
+  - Bi-directional raw streaming via `MicroVMManager.sendRawBytes` and `MicroVMManager.onRawData`.
+  - Preserved terminal screen contents across navigation tabs using rolling raw byte replay buffer.
+  - Toolbar with font zoom controls, signal shortcuts (Ctrl+C, Ctrl+D, Ctrl+L), quick commands, and "Open in Terminal.app".
+- **Validation**:
+  - `vm/scripts/test_vm_client_in_niri.sh`: Strict windowed mode verified (100% pass with persistent disk attached).
+  - Live reboot verification: persistent files retained across complete VM reboot.
+  - `cargo clippy -- -D warnings`: 0 warnings, 0 errors.
+  - `swiftc -warnings-as-errors`: 0 warnings, 0 errors.
+  - App packaging: `scripts/package_app.sh` created codesigned `dist/Niri.app`.
+- **Triple-Gate Sign-off**: Certified in `PR_008_approval.md`. Cleared for merge to `dev` and promotion to `main`.

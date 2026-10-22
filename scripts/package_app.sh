@@ -27,6 +27,7 @@ mkdir -p "${RESOURCES_DIR}/vm_images"
 echo "[BUILD] Compiling NiriApp native GUI launcher..."
 swiftc -O -warnings-as-errors -parse-as-library \
     -framework SwiftUI -framework AppKit -framework Foundation -framework Combine \
+    -I "${REPO_ROOT}/apps/niri_mac_gui/Libraries" -L "${REPO_ROOT}/apps/niri_mac_gui/Libraries" -lSwiftTerm \
     -plugin-path /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins \
     "${REPO_ROOT}/apps/niri_mac_gui/Sources/main.swift" \
     "${REPO_ROOT}/apps/niri_mac_gui/Sources/Models"/*.swift \

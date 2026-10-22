@@ -103,7 +103,7 @@ public struct DashboardView: View {
                             ("State", coordinator.microvm.isRunning ? "Booted" : "Inactive"),
                             ("PID", coordinator.microvm.isRunning ? "\(coordinator.microvm.pid)" : "-"),
                             ("vCPUs / RAM", "\(coordinator.config.vCPUs) Cores / \(coordinator.config.memoryMB) MB"),
-                            ("Boot Time", coordinator.microvm.bootDurationMs > 0 ? String(format: "%.1f ms", coordinator.microvm.bootDurationMs) : "-")
+                            ("Storage Disk", coordinator.config.diskPath.isEmpty ? "20 GB Default" : (coordinator.config.diskPath as NSString).lastPathComponent)
                         ]
                     )
 

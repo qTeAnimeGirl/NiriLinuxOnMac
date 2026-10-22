@@ -172,15 +172,35 @@ public struct ParametersView: View {
                             }
                         }
 
-                        // Optional Disk Path
+                        // Persistent Disk Storage
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Raw Root Disk Image (Optional):")
-                                .font(.caption).foregroundColor(.secondary)
                             HStack {
-                                TextField("Optional disk image path (e.g. rootfs.raw)", text: $config.diskPath)
+                                Text("Persistent Disk Storage (virtio-blk /dev/vda):")
+                                    .font(.caption).foregroundColor(.secondary)
+                                Spacer()
+                                Text("Managed via VM Manager tab")
+                                    .font(.caption2)
+                                    .foregroundColor(.accentColor)
+                            }
+                            HStack {
+                                TextField("Path to disk image (e.g. archlinux_disk.img)", text: $config.diskPath)
                                     .textFieldStyle(.roundedBorder)
                                 Button("Browse...") {
                                     browseFile { path in config.diskPath = path }
+                                }
+                            }
+                            if !config.availableDisks.isEmpty {
+                                HStack {
+                                    Text("Available Disks:")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Picker("", selection: $config.diskPath) {
+                                        ForEach(config.availableDisks) { d in
+                                            Text("\(d.name) (\(d.logicalSizeGBString))").tag(d.path)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .frame(maxWidth: 260)
                                 }
                             }
                         }

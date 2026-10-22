@@ -7,6 +7,7 @@ import SwiftUI
 
 public enum NavigationTab: String, CaseIterable, Identifiable {
     case dashboard = "Dashboard"
+    case vms = "VM Manager"
     case parameters = "Parameters"
     case terminal = "Linux Terminal"
     case logs = "Live Logs"
@@ -17,6 +18,7 @@ public enum NavigationTab: String, CaseIterable, Identifiable {
     public var icon: String {
         switch self {
         case .dashboard: return "gauge.with.dots.needle.bottom.50percent"
+        case .vms: return "server.rack"
         case .parameters: return "slider.horizontal.3"
         case .terminal: return "apple.terminal"
         case .logs: return "terminal"
@@ -96,6 +98,8 @@ public struct ContentView: View {
                 switch selectedTab {
                 case .dashboard:
                     DashboardView(coordinator: coordinator)
+                case .vms:
+                    VMManagerView(coordinator: coordinator)
                 case .parameters:
                     ParametersView(config: coordinator.config)
                 case .terminal:
