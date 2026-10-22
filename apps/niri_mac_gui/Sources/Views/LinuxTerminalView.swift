@@ -5,13 +5,77 @@
 
 import SwiftUI
 import AppKit
+import SwiftTerm
 
+// MARK: - AppKit SwiftTerm NSViewRepresentable Bridge
+public struct SwiftTerminalRepresentable: NSViewRepresentable {
+    public typealias NSViewType = SwiftTerm.TerminalView
+
+    @ObservedObject var microvm: MicroVMManager
+    var fontSize: CGFloat
+
+    public final class Coordinator: NSObject, TerminalViewDelegate {
+        weak var microvm: MicroVMManager?
+
+        init(microvm: MicroVMManager) {
+            self.microvm = microvm
+        }
+
+        public func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {}
+
+        public func setTerminalTitle(source: TerminalView, title: String) {}
+
+        public func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+
+        public func send(source: TerminalView, data: ArraySlice<UInt8>) {
+            microvm?.sendRawBytes(Data(data))
+        }
+
+        public func scrolled(source: TerminalView, position: Double) {}
+
+        public func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
+    }
+
+    public func makeCoordinator() -> Coordinator {
+        Coordinator(microvm: microvm)
+    }
+
+    public func makeNSView(context: Context) -> SwiftTerm.TerminalView {
+        let terminal = SwiftTerm.TerminalView(frame: .zero)
+        terminal.terminalDelegate = context.coordinator
+        terminal.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        terminal.nativeBackgroundColor = NSColor(red: 0.08, green: 0.09, blue: 0.12, alpha: 1.0)
+        terminal.nativeForegroundColor = NSColor(red: 0.92, green: 0.94, blue: 0.97, alpha: 1.0)
+
+        // Feed recent replay buffer if present
+        let existing = microvm.getRecentRawData()
+        if !existing.isEmpty {
+            terminal.feed(byteArray: ArraySlice<UInt8>(existing))
+        }
+
+        // Hook up live stream from MicroVM
+        microvm.onRawData = { [weak terminal] data in
+            DispatchQueue.main.async {
+                terminal?.feed(byteArray: ArraySlice<UInt8>(data))
+            }
+        }
+
+        return terminal
+    }
+
+    public func updateNSView(_ nsView: SwiftTerm.TerminalView, context: Context) {
+        if nsView.font.pointSize != fontSize {
+            nsView.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        }
+    }
+}
+
+// MARK: - Full Proper Linux Terminal View
 public struct LinuxTerminalView: View {
     @ObservedObject var microvm: MicroVMManager
     @State private var commandInput: String = ""
-    @State private var autoScroll: Bool = true
-    @State private var commandHistory: [String] = []
-    @State private var historyIndex: Int = -1
+    @State private var fontSize: CGFloat = 13.0
+    @State private var showShortcuts: Bool = true
 
     public init(microvm: MicroVMManager) {
         self.microvm = microvm
@@ -19,13 +83,13 @@ public struct LinuxTerminalView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // Header bar
+            // Header Bar
             HStack {
                 HStack(spacing: 8) {
                     Circle()
                         .fill(microvm.isRunning ? Color.green : Color.red)
                         .frame(width: 10, height: 10)
-                    Text("Arch Linux ARM Console")
+                    Text("Arch Linux ARM Hardware Console")
                         .font(.headline)
                     if microvm.isRunning {
                         Text("PID \(microvm.pid)")
@@ -41,9 +105,56 @@ public struct LinuxTerminalView: View {
                 Spacer()
 
                 HStack(spacing: 12) {
-                    Toggle("Auto-scroll", isOn: $autoScroll)
-                        .toggleStyle(.checkbox)
+                    // Font zoom controls
+                    HStack(spacing: 4) {
+                        Button(action: {
+                            if fontSize > 9 { fontSize -= 1 }
+                        }) {
+                            Image(systemName: "textformat.size.smaller")
+                        }
+                        .help("Decrease Font Size")
+
+                        Text("\(Int(fontSize)) pt")
+                            .font(.caption)
+                            .frame(width: 34)
+
+                        Button(action: {
+                            if fontSize < 24 { fontSize += 1 }
+                        }) {
+                            Image(systemName: "textformat.size.larger")
+                        }
+                        .help("Increase Font Size")
+                    }
+
+                    Divider()
+                        .frame(height: 16)
+
+                    // Control signals
+                    HStack(spacing: 4) {
+                        Button("Ctrl+C") {
+                            sendControlCode(3) // ETX
+                        }
                         .font(.caption)
+                        .disabled(!microvm.isRunning)
+                        .help("Interrupt running command")
+
+                        Button("Ctrl+D") {
+                            sendControlCode(4) // EOT
+                        }
+                        .font(.caption)
+                        .disabled(!microvm.isRunning)
+                        .help("End-of-file")
+
+                        Button("Ctrl+L") {
+                            sendControlCode(12) // Form Feed / Clear
+                        }
+                        .font(.caption)
+                        .disabled(!microvm.isRunning)
+                        .help("Clear screen")
+                    }
+
+                    Divider()
+                        .frame(height: 16)
 
                     Button(action: {
                         microvm.clearTerminal()
@@ -55,109 +166,80 @@ public struct LinuxTerminalView: View {
                     Button(action: {
                         openHostTerminal()
                     }) {
-                        Label("Open in Terminal.app", systemImage: "terminal")
+                        Label("Terminal.app", systemImage: "terminal")
                             .font(.caption)
                     }
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 10)
             .background(Color(NSColor.windowBackgroundColor))
 
             Divider()
 
-            // Terminal Console Body
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        if microvm.terminalLines.isEmpty {
-                            Text(microvm.isRunning
-                                 ? "[Arch Linux ARM MicroVM Console Ready. Type a command below or click a shortcut.]"
-                                 : "[MicroVM is not running. Click 'Start All' on the Dashboard to boot Arch Linux.]")
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .padding(12)
-                        } else {
-                            LazyVStack(alignment: .leading, spacing: 1) {
-                                ForEach(Array(microvm.terminalLines.enumerated()), id: \.offset) { index, line in
-                                    Text(line)
-                                        .font(.system(size: 12, weight: .regular, design: .monospaced))
-                                        .foregroundColor(colorForLine(line))
-                                        .textSelection(.enabled)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .id(index)
-                                }
-                            }
-                            .padding(12)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .background(Color.black.opacity(0.92))
-                .onChange(of: microvm.terminalLines.count) { _, _ in
-                    if autoScroll, let lastIndex = microvm.terminalLines.indices.last {
-                        proxy.scrollTo(lastIndex, anchor: .bottom)
-                    }
-                }
-            }
+            // Terminal Screen Body (Full SwiftTerm VT100 / Xterm Emulator)
+            SwiftTerminalRepresentable(microvm: microvm, fontSize: fontSize)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
 
-            // Quick Shortcut Bar
-            ScrollView(.horizontal, showsIndicators: false) {
+            // Quick Command Toolbar
+            VStack(spacing: 6) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Text("Shortcuts:")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+
+                        quickButton("pacman -Sy")
+                        quickButton("install-firefox")
+                        quickButton("df -h /mnt/storage")
+                        quickButton("wayland-run wayland_window &")
+                        quickButton("uname -a")
+                        quickButton("ip addr show eth0")
+                        quickButton("curl -I https://archlinuxarm.org")
+                        quickButton("ps aux")
+                        quickButton("poweroff -f")
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                }
+                .background(Color(NSColor.controlBackgroundColor))
+
+                Divider()
+
+                // Interactive Quick Input Bar
                 HStack(spacing: 8) {
-                    Text("Quick Commands:")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    Text("archlinux:~$")
+                        .font(.system(.subheadline, design: .monospaced))
+                        .foregroundColor(.accentColor)
 
-                    quickButton("pacman -Sy")
-                    quickButton("install-firefox")
-                    quickButton("wayland-run wayland_window &")
-                    quickButton("uname -a")
-                    quickButton("ip addr show eth0")
-                    quickButton("curl -I https://archlinuxarm.org")
-                    quickButton("ps aux")
-                    quickButton("ls -la /run/user/1000")
-                    quickButton("poweroff -f")
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-            }
-            .background(Color(NSColor.controlBackgroundColor))
+                    TextField("Type command or paste (e.g. pacman -Syu, nano, top)...", text: $commandInput)
+                        .textFieldStyle(.plain)
+                        .font(.system(.body, design: .monospaced))
+                        .onSubmit {
+                            executeCommand()
+                        }
 
-            Divider()
-
-            // Interactive Input Bar
-            HStack(spacing: 8) {
-                Text("archlinux:~$")
-                    .font(.system(.subheadline, design: .monospaced))
-                    .foregroundColor(.accentColor)
-
-                TextField("Type command (e.g. ls, uname -a, ps aux)...", text: $commandInput)
-                    .textFieldStyle(.plain)
-                    .font(.system(.body, design: .monospaced))
-                    .onSubmit {
+                    Button(action: {
                         executeCommand()
+                    }) {
+                        Text("Send")
+                            .font(.caption.bold())
                     }
-
-                Button(action: {
-                    executeCommand()
-                }) {
-                    Text("Send")
-                        .font(.caption.bold())
+                    .disabled(!microvm.isRunning || commandInput.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .disabled(!microvm.isRunning || commandInput.trimmingCharacters(in: .whitespaces).isEmpty)
-                .keyboardShortcut(.defaultAction)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
             .background(Color(NSColor.windowBackgroundColor))
         }
     }
 
     private func quickButton(_ cmd: String) -> some View {
         Button(action: {
-            sendCommand(cmd)
+            microvm.sendCommand(cmd)
         }) {
             Text(cmd)
                 .font(.system(size: 11, design: .monospaced))
@@ -173,29 +255,12 @@ public struct LinuxTerminalView: View {
     private func executeCommand() {
         let trimmed = commandInput.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-
-        sendCommand(trimmed)
-        commandHistory.append(trimmed)
+        microvm.sendCommand(trimmed)
         commandInput = ""
-        historyIndex = -1
     }
 
-    private func sendCommand(_ cmd: String) {
-        microvm.sendCommand(cmd)
-    }
-
-    private func colorForLine(_ line: String) -> Color {
-        if line.contains("FATAL") || line.contains("ERROR") || line.contains("failed") || line.contains("Panic") {
-            return Color.red.opacity(0.9)
-        } else if line.contains("WARN") || line.contains("warning") {
-            return Color.yellow.opacity(0.9)
-        } else if line.contains("Arch Linux ARM") || line.contains("Linux version") {
-            return Color.cyan.opacity(0.9)
-        } else if line.contains("SUCCESS") || line.contains("booted successfully") {
-            return Color.green.opacity(0.9)
-        } else {
-            return Color.white.opacity(0.85)
-        }
+    private func sendControlCode(_ byte: UInt8) {
+        microvm.sendRawBytes(Data([byte]))
     }
 
     private func openHostTerminal() {
