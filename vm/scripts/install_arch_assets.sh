@@ -241,6 +241,120 @@ for pkg_path in "${RESOLVED_PACKAGES[@]}"; do
         2>/dev/null || true
 done
 
+# 4a2. Populate /var/lib/pacman/local database for extracted packages so pacman tracks ownership
+echo "[PACMAN] Indexing core packages into local pacman database..."
+python3 - "${STAGE_DIR}" "${RESOLVED_PACKAGES[@]}" << 'PYEOF'
+import sys, os, tarfile
+
+stage_dir = sys.argv[1]
+pacman_local = os.path.join(stage_dir, 'var', 'lib', 'pacman', 'local')
+os.makedirs(pacman_local, exist_ok=True)
+
+pkg_paths = sys.argv[2:]
+count = 0
+for pkg in pkg_paths:
+    try:
+        with tarfile.open(pkg) as tar:
+            members = tar.getmembers()
+            file_list = [m.name for m in members if not m.name.startswith('.')]
+            try:
+                pkginfo_f = tar.extractfile('.PKGINFO')
+                if not pkginfo_f: continue
+                pkginfo_data = pkginfo_f.read().decode('utf-8', errors='ignore')
+            except KeyError:
+                continue
+
+            meta = {}
+            for line in pkginfo_data.splitlines():
+                line = line.strip()
+                if not line or line.startswith('#'): continue
+                if '=' in line:
+                    k, v = line.split('=', 1)
+                    k, v = k.strip(), v.strip()
+                    if k in ('license', 'depend', 'provides', 'conflict', 'replaces', 'optdepend'):
+                        meta.setdefault(k, []).append(v)
+                    else:
+                        meta[k] = v
+
+            pkgname = meta.get('pkgname')
+            pkgver = meta.get('pkgver')
+            if not pkgname or not pkgver: continue
+
+            target_pkg_dir = os.path.join(pacman_local, f'{pkgname}-{pkgver}')
+            os.makedirs(target_pkg_dir, exist_ok=True)
+
+            with open(os.path.join(target_pkg_dir, 'desc'), 'w') as f:
+                f.write(f'%NAME%\n{pkgname}\n\n')
+                f.write(f'%VERSION%\n{pkgver}\n\n')
+                if 'pkgbase' in meta:
+                    f.write(f'%BASE%\n{meta["pkgbase"]}\n\n')
+                if 'pkgdesc' in meta:
+                    f.write(f'%DESC%\n{meta["pkgdesc"]}\n\n')
+                if 'url' in meta:
+                    f.write(f'%URL%\n{meta["url"]}\n\n')
+                if 'arch' in meta:
+                    f.write(f'%ARCH%\n{meta["arch"]}\n\n')
+                if 'builddate' in meta:
+                    f.write(f'%BUILDDATE%\n{meta["builddate"]}\n\n')
+                f.write(f'%INSTALLDATE%\n{meta.get("builddate", "1770000000")}\n\n')
+                if 'packager' in meta:
+                    f.write(f'%PACKAGER%\n{meta["packager"]}\n\n')
+                if 'size' in meta:
+                    f.write(f'%SIZE%\n{meta["size"]}\n\n')
+                f.write('%REASON%\n0\n\n')
+                if 'license' in meta:
+                    f.write('%LICENSE%\n' + '\n'.join(meta['license']) + '\n\n')
+                if 'provides' in meta:
+                    f.write('%PROVIDES%\n' + '\n'.join(meta['provides']) + '\n\n')
+                if 'depend' in meta:
+                    f.write('%DEPENDS%\n' + '\n'.join(meta['depend']) + '\n\n')
+                if 'conflict' in meta:
+                    f.write('%CONFLICTS%\n' + '\n'.join(meta['conflict']) + '\n\n')
+                if 'replaces' in meta:
+                    f.write('%REPLACES%\n' + '\n'.join(meta['replaces']) + '\n\n')
+
+            with open(os.path.join(target_pkg_dir, 'files'), 'w') as f:
+                f.write('%FILES%\n')
+                for fname in sorted(file_list):
+                    f.write(f'{fname}\n')
+            count += 1
+    except Exception as e:
+        print(f'Warning: failed to index {pkg}: {e}', file=sys.stderr)
+
+print(f'[PACMAN] Successfully indexed {count} core packages into local ALPM database.')
+PYEOF
+
+# Deploy /usr/local/bin/pacman transparent wrapper enforcing --overwrite '*'
+mkdir -p usr/local/bin
+cat << 'EOF' > usr/local/bin/pacman
+#!/bin/bash
+# /usr/local/bin/pacman - Transparent pacman wrapper
+# Enforces --overwrite '*' on sync (-S) and upgrade (-U) operations so that
+# any pre-existing bootstrap files are cleanly claimed and updated without filesystem conflicts.
+has_overwrite=0
+for arg in "$@"; do
+    if [[ "$arg" == --overwrite* ]]; then
+        has_overwrite=1
+        break
+    fi
+done
+
+is_install=0
+for arg in "$@"; do
+    if [[ "$arg" == -S* || "$arg" == -U* ]]; then
+        is_install=1
+        break
+    fi
+done
+
+if [[ $is_install -eq 1 && $has_overwrite -eq 0 ]]; then
+    exec /usr/bin/pacman --overwrite '*' "$@"
+else
+    exec /usr/bin/pacman "$@"
+fi
+EOF
+chmod 755 usr/local/bin/pacman
+
 # 4b. Ensure essential busybox applets and symlinks
 mkdir -p usr/bin usr/lib lib etc/profile.d usr/share/udhcpc
 for applet in find insmod lsmod rmmod modprobe ip ifconfig route udhcpc setsid cttyhack awk sed grep dmesg ping ping6 traceroute netstat which less vi reboot poweroff; do
@@ -406,7 +520,7 @@ set -e
 echo "============================================================"
 echo "Installing Firefox via Arch Linux pacman..."
 echo "============================================================"
-pacman -Sy --noconfirm firefox
+pacman -Sy --noconfirm --overwrite '*' firefox
 echo "Launching Firefox under Wayland..."
 export XDG_RUNTIME_DIR=/run/user/1000
 export WAYLAND_DISPLAY=wayland-0
@@ -502,6 +616,10 @@ if [ -b /dev/vda ]; then
             mkdir -p /mnt/storage/root_upper /mnt/storage/root_work
             mkdir -p /mnt/storage/home
 
+            # Seed initial pacman local database to persistent storage if missing
+            mkdir -p /mnt/storage/var_upper/lib/pacman/local
+            cp -rn /var/lib/pacman/local/* /mnt/storage/var_upper/lib/pacman/local/ 2>/dev/null || true
+
             mount -t overlay overlay -o lowerdir=/usr,upperdir=/mnt/storage/usr_upper,workdir=/mnt/storage/usr_work /usr 2>/dev/null || true
             mount -t overlay overlay -o lowerdir=/var,upperdir=/mnt/storage/var_upper,workdir=/mnt/storage/var_work /var 2>/dev/null || true
             mount -t overlay overlay -o lowerdir=/etc,upperdir=/mnt/storage/etc_upper,workdir=/mnt/storage/etc_work /etc 2>/dev/null || true
@@ -509,6 +627,34 @@ if [ -b /dev/vda ]; then
             mount --bind /mnt/storage/home /home 2>/dev/null || true
 
             echo "[GUEST INIT] OverlayFS persistence activated! Free application storage: ${STORAGE_FREE}"
+
+            # Deploy pacman wrapper on persistent /usr/local/bin
+            mkdir -p /usr/local/bin
+            cat << 'PACEOF' > /usr/local/bin/pacman
+#!/bin/bash
+has_overwrite=0
+for arg in "$@"; do
+    if [[ "$arg" == --overwrite* ]]; then
+        has_overwrite=1
+        break
+    fi
+done
+
+is_install=0
+for arg in "$@"; do
+    if [[ "$arg" == -S* || "$arg" == -U* ]]; then
+        is_install=1
+        break
+    fi
+done
+
+if [[ $is_install -eq 1 && $has_overwrite -eq 0 ]]; then
+    exec /usr/bin/pacman --overwrite '*' "$@"
+else
+    exec /usr/bin/pacman "$@"
+fi
+PACEOF
+            chmod 755 /usr/local/bin/pacman
         fi
     fi
 fi

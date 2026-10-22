@@ -53,6 +53,10 @@ if [ -b /dev/vda ]; then
             mkdir -p /mnt/storage/root_upper /mnt/storage/root_work
             mkdir -p /mnt/storage/home
 
+            # Seed pacman local database from initramfs to persistent storage if missing
+            mkdir -p /mnt/storage/var_upper/lib/pacman/local
+            cp -rn /var/lib/pacman/local/* /mnt/storage/var_upper/lib/pacman/local/ 2>/dev/null || true
+
             mount -t overlay overlay -o lowerdir=/usr,upperdir=/mnt/storage/usr_upper,workdir=/mnt/storage/usr_work /usr 2>/dev/null || true
             mount -t overlay overlay -o lowerdir=/var,upperdir=/mnt/storage/var_upper,workdir=/mnt/storage/var_work /var 2>/dev/null || true
             mount -t overlay overlay -o lowerdir=/etc,upperdir=/mnt/storage/etc_upper,workdir=/mnt/storage/etc_work /etc 2>/dev/null || true
@@ -60,6 +64,37 @@ if [ -b /dev/vda ]; then
             mount --bind /mnt/storage/home /home 2>/dev/null || true
 
             echo "[GUEST INIT] OverlayFS persistence activated! Free application storage: ${STORAGE_FREE}"
+
+            # Deploy /usr/local/bin/pacman wrapper to seamlessly handle any existing unmanaged files
+            mkdir -p /usr/local/bin
+            cat << 'PACEOF' > /usr/local/bin/pacman
+#!/bin/bash
+# /usr/local/bin/pacman - Transparent pacman wrapper
+# Enforces --overwrite '*' on sync (-S) and upgrade (-U) operations so that
+# any pre-existing bootstrap files are cleanly claimed and updated without filesystem conflicts.
+has_overwrite=0
+for arg in "$@"; do
+    if [[ "$arg" == --overwrite* ]]; then
+        has_overwrite=1
+        break
+    fi
+done
+
+is_install=0
+for arg in "$@"; do
+    if [[ "$arg" == -S* || "$arg" == -U* ]]; then
+        is_install=1
+        break
+    fi
+done
+
+if [[ $is_install -eq 1 && $has_overwrite -eq 0 ]]; then
+    exec /usr/bin/pacman --overwrite '*' "$@"
+else
+    exec /usr/bin/pacman "$@"
+fi
+PACEOF
+            chmod 755 /usr/local/bin/pacman
         fi
     fi
 fi
@@ -117,7 +152,7 @@ if [ ! -x /usr/bin/install-firefox ]; then
 #!/bin/sh
 set -e
 echo "Updating package databases and installing Firefox..."
-pacman -Sy --noconfirm firefox
+pacman -Sy --noconfirm --overwrite '*' firefox
 echo "Launching Firefox under Wayland..."
 export XDG_RUNTIME_DIR=/run/user/1000
 export WAYLAND_DISPLAY=wayland-0
