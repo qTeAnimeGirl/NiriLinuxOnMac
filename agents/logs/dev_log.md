@@ -68,3 +68,35 @@
   - `cargo clippy --workspace --all-targets -- -D warnings`: 0 warnings, 0 errors.
   - `cargo clippy --manifest-path vm/host/Cargo.toml --all-targets -- -D warnings`: 0 warnings, 0 errors.
 - **Triple-Gate Sign-off**: Certified in `PR_004_qa_report.md`, `PR_004_security_audit.md`, and `PR_004_approval.md`. Merged to `dev`.
+
+### [2026-10-22T02:44:00+01:00] Milestone 5 - Unified Niri.app GUI Launcher, Auto-Installation & In-Compositor Wayland Window Presentation
+- **In-VM Wayland Client & Guest Proxy (`vm/guest/src/`)**:
+  - Implemented `wayland_window.rs`: Standalone static Rust client compiled with internal `ld.lld` for `aarch64-unknown-linux-musl`. Creates an `xdg_toplevel` surface, responds to `xdg_surface.configure` with `ack_configure`, allocates an Indigo/Cyan gradient SHM buffer (`memfd_create` or tmpfile fallback), attaches buffer, damages surface, commits, and calls `conn.flush()`.
+  - Implemented `vsock_guest.rs`: Multi-threaded proxy bridging `/run/user/1000/wayland-0` to `AF_VSOCK` host port 1024 with graceful atomic shutdown.
+- **MicroVM Hypervisor Launcher Enhancements (`vm/host/microvm_launcher.swift`)**:
+  - Parsed Wayland byte stream on the fly. Intercepts `wl_shm.create_pool(size)` requests across virtio-vsock and dynamically injects anonymous macOS temporary memory descriptors (`mkstemp("/tmp/niri_shm_XXXXXX")`, immediately unlinked via `libc::unlink()`) using `sendmsg(SCM_RIGHTS)` directly into Niri's `wayland-1` socket.
+  - Aligned `VZVirtioSocketListenerDelegate` Objective-C selector signature, retained socket connections to avoid premature ARC deallocation, and enforced blocking socket I/O flags.
+- **Automated Asset Bootstrapping (`vm/scripts/install_assets.sh`)**:
+  - Automated download of Alpine Linux `linux-virt-6.6.142` APK and initramfs.
+  - Extracted uncompressed ARM64 Linux kernel `Image` (34.4MB) at gzip offset `51568`.
+  - Extracted kernel modules (`vsock.ko`, `virtiofs.ko`), compiled guest static binaries, and generated bootable `initramfs.cpio.gz`.
+- **Unified Native macOS SwiftUI Launcher GUI (`apps/niri_mac_gui/`)**:
+  - Authored comprehensive configuration and management application in Swift/SwiftUI:
+    - Display & Screen: Notch bypass toggle, windowed mode toggle, resolution dropdown & custom dimension pickers.
+    - MicroVM Resources: vCPUs slider (1 to hardware max), Memory allocation slider (1GB to 32GB), Disk image path.
+    - Graphics & Acceleration: virtio-gpu toggle, Metal acceleration, SHM directory path.
+    - IPC & Networking: vsock port (1024), Wayland socket path.
+    - Linux App Launch: Startup guest command input field.
+    - Lifecycle: "One-Click Start", "Stop All", "Restart", and "Auto-Install Assets".
+    - Live Dashboard: Real-time status cards (Compositor PID & FPS, MicroVM PID & state, Vsock bridge status), color-coded multi-stream console log viewer, and live Mapped Wayland Windows table with focus/close actions.
+- **Application Bundle Packaging (`scripts/package_app.sh`)**:
+  - Packaged standalone `dist/Niri.app` bundle containing ARM64 Mach-O binaries (`NiriApp`, `niri`, `microvm_launcher`, `niri-vsock-host`), bundled assets (`Image`, `initramfs.cpio.gz`, `cursor.rgba`, `default-config.kdl`), Info.plist, and entitlements (`com.apple.security.virtualization`, `com.apple.security.hypervisor`).
+  - Codesigned and verified with `codesign --verify --deep --strict dist/Niri.app` (exit code 0).
+- **Validation**:
+  - `cargo test --workspace`: 226 tests passed, 0 failed.
+  - `cargo test --manifest-path vm/host/Cargo.toml`: 5 tests passed, 0 failed.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: 0 warnings, 0 errors.
+  - `swiftc -warnings-as-errors` on `apps/niri_mac_gui`: 0 warnings, 0 errors.
+  - `swiftc -O -warnings-as-errors` on `microvm_launcher.swift`: 0 warnings, 0 errors.
+  - `vm/scripts/test_vm_client_in_niri.sh` and `test_full_pipeline.sh`: In-VM client mapped and focused in Niri layout in < 2 seconds.
+- **Triple-Gate Sign-off**: Certified in `PR_005_qa_report.md`, `PR_005_security_audit.md`, and `PR_005_approval.md`. Cleared for merge to `dev` and promotion to `main`.

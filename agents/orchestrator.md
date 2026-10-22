@@ -54,4 +54,24 @@
   - `vm/host/microvm_launcher.swift`: Apple Virtualization.framework runner with sub-200ms cold boot, `VZVirtioSocketListener`, `VZVirtioFileSystemDeviceConfiguration`, and `VZVirtioGraphicsDeviceConfiguration`.
   - `vm/scripts/test_vm_bridge.sh`: End-to-end loopback socket test harness.
 - **Triple-Gate Approval**: PR #004 approved across QA (226/226 tests passed + 5/5 host tests + bridge loopback verified), Security (ARM64 AAPCS64 HFA ABI verification, SHM bounds checking, path traversal defenses, hypervisor isolation), and Code Quality (`cargo clippy --all-targets -- -D warnings` passed with 0 warnings).
-- **Next Sprint Target**: Milestone Promotion to `main` and release runbook publication.
+
+### 2026-10-22 - Milestone 5 Achieved: Unified Niri.app GUI Launcher, Auto-Installation & In-Compositor Wayland Window Presentation
+- **Patches Applied**:
+  - `apps/niri_mac_gui`:
+    - Built native SwiftUI application bundle `NiriApp` with full parameter controls: Notch bypass toggle, windowed mode toggle, custom display resolution selection, vCPUs slider (1-max), memory allocation slider (1GB-32GB), virtio-gpu toggle, Metal acceleration, SHM directory path, vsock port (1024), startup client command, and rootfs/kernel file pickers.
+    - Implemented reactive architecture with `LauncherConfig`, `CompositorManager`, `MicroVMManager`, `VsockBridgeManager`, `AssetInstaller`, `LogManager`, and `WindowInfo`.
+    - Real-time status cards (Compositor PID & FPS, MicroVM PID & state, Vsock bridge status) and live mapped Wayland window table backed by `niri msg --json windows` with focus and close actions.
+    - Integrated multi-stream color-coded log console viewer.
+  - `vm/scripts/install_assets.sh` & `AssetInstaller.swift`:
+    - Automated Linux asset bootstrapping: downloads Alpine `linux-virt-6.6.142` APK and initramfs, extracts uncompressed kernel `Image` (34.4MB) at gzip offset `51568`, bundles kernel modules (`vsock.ko`, `virtiofs.ko`), and packs guest client and proxy into `initramfs.cpio.gz`.
+  - `vm/host/microvm_launcher.swift`:
+    - Dynamic Wayland protocol parser intercepting `wl_shm.create_pool` requests on-the-fly.
+    - Injects anonymous macOS shared memory descriptors created via `mkstemp("/tmp/niri_shm_XXXXXX")` and unlinked via `libc::unlink()` across UNIX domain sockets using `sendmsg(SCM_RIGHTS)`.
+    - Retains `VZVirtioSocketConnection` instances and enforces blocking socket I/O.
+  - `vm/guest/src/`:
+    - `wayland_window.rs`: Standalone pure-Rust static client committing a 640x480 gradient to `xdg_toplevel` inside Niri.
+    - `vsock_guest.rs`: Multi-threaded vsock $\leftrightarrow$ `/run/user/1000/wayland-0` proxy.
+  - `scripts/package_app.sh`:
+    - Packages standard macOS `.app` bundle `dist/Niri.app` containing ARM64 Mach-O binaries, bundled assets, Info.plist, and codesign with `vm/host/entitlements.plist` (`com.apple.security.virtualization`, `com.apple.security.hypervisor`).
+- **Triple-Gate Approval**: PR #005 certified across QA (226 tests passed + 0 clippy warnings + live in-compositor window presentation verified in <2s), Security (memory audits, bounded message sizes, zero command injection, mkstemp/unlink SHM isolation, minimal entitlements), and Code Review (clean SwiftUI/Rust architectures, zero compiler warnings, valid codesign).
+- **Promotion Target**: PR #005 approved for merge into `dev` and promotion to `main` with production release tag `v0.2.0-macos`.
