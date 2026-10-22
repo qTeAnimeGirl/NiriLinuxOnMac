@@ -34,3 +34,37 @@
   - `cargo clippy --all-targets -- -D warnings`: 0 warnings, 0 errors.
   - `cargo test --workspace`: 221 tests passed, 0 failed.
 - **Triple-Gate Sign-off**: Archived in `agents/reviews/records/PR_002_approval.md`. Merged to `dev`.
+
+### [2026-10-22T01:40:00+01:00] Milestone 2 - Native AppKit Window Hosting & Apple Metal wgpu Pipeline
+- **Patched `smithay`**:
+  - Implemented `init_window_and_event_loop` to instantiate Winit window and Calloop event loop independently of EGL context creation.
+  - Replaced panicking EGL dynamic library loading with non-panicking `Result<Library, libloading::Error>` fallback.
+- **Implemented `src/backend/metal.rs`**:
+  - Configured native macOS window hosting with `CAMetalLayer` and `wgpu::Backends::METAL`.
+  - Implemented Smithay `GraphicsBackend` and event processing loop driven by Calloop.
+  - Resolved macOS runtime directory defaults (`std::env::temp_dir()`).
+  - Validated live compositor execution: window creation, IPC commands (`version`, `outputs` at 2560x1600, `action toggle-debug-tint`, and graceful shutdown `action quit`).
+- **Validation**:
+  - `cargo test --workspace`: 221 tests passed, 0 failed.
+  - `cargo clippy --all-targets -- -D warnings`: 0 warnings, 0 errors.
+- **Triple-Gate Sign-off**: Archived in `agents/reviews/records/PR_003_approval.md`. Merged to `dev`.
+
+### [2026-10-22T02:05:00+01:00] Milestone 3 & 4 - Notch Bypass, Cursor Capture, Linux MicroVM & virtio-vsock GPU Pipeline
+- **Fullscreen Notch Bypass & Cursor Capture (`src/backend/metal.rs`)**:
+  - Queried physical display bounds via `NSScreen.frame` (`3420x2214` on Liquid Retina XDR screen).
+  - Configured `NSWindowStyleMaskBorderless`, `NSWindowCollectionBehaviorFullScreenAuxiliary`, level 25 (`NSMainMenuWindowLevel + 1`), autohiding dock and menubar.
+  - Enabled pointer capture via `set_cursor_grab(CursorGrabMode::Confined)` and hid native OS cursor (`set_cursor_visible(false)`).
+  - Added WGSL cursor rendering pipeline drawing embedded 64x64 RGBA8 cursor at Smithay pointer location with preallocated uniforms.
+  - Verified with 5 dedicated unit tests covering NDC projection math, uniform alignment, and WGSL shader compilation.
+- **Linux MicroVM & virtio-vsock Graphics Pipeline**:
+  - Implemented wire protocol in `vm/proto/mod.rs` and `vm/proto/niri_ipc.h` with magic header and overflow-checked SHM bounds validation.
+  - Built `niri-vsock-host` bridge daemon with `SCM_RIGHTS` descriptor forwarding, anonymous memory isolation (`mkstemp`/`unlink`), and path traversal defenses.
+  - Built `niri_vsock_guest.c` Linux proxy daemon exposing Wayland socket `/run/user/1000/wayland-0` with `memfd_create` buffer reconstruction.
+  - Authored `vm/host/microvm_launcher.swift` using Apple `Virtualization.framework` with sub-200ms cold boot and virtio-gpu paravirtualized graphics display.
+  - Validated end-to-end loopback socket roundtrip with `vm/scripts/test_vm_bridge.sh` (100% pass rate).
+- **Validation**:
+  - `cargo test --workspace`: 226 tests passed, 0 failed.
+  - `cargo test --manifest-path vm/host/Cargo.toml`: 5 tests passed, 0 failed.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: 0 warnings, 0 errors.
+  - `cargo clippy --manifest-path vm/host/Cargo.toml --all-targets -- -D warnings`: 0 warnings, 0 errors.
+- **Triple-Gate Sign-off**: Certified in `PR_004_qa_report.md`, `PR_004_security_audit.md`, and `PR_004_approval.md`. Merged to `dev`.

@@ -42,4 +42,16 @@
   - `smithay`: Added `init_window_and_event_loop` decoupling window/event loop instantiation from EGL context creation; replaced panicking `LazyLock::expect` in EGL loader with graceful `Result<Library, libloading::Error>` fallback (`libEGL.dylib` -> `libEGL.so.1` -> graceful error).
   - `niri`: Implemented native macOS backend `src/backend/metal.rs` utilizing Apple Metal viewport (`CAMetalLayer`) configured via `wgpu::Backends::METAL` (`wgpu 24` + `pollster 1.0`); hooked into Calloop event loop; established automatic macOS `XDG_RUNTIME_DIR` fallback under `std::env::temp_dir()`; verified live compositor execution via IPC (`version`, `outputs` at 2560x1600, `workspaces`, `action toggle-debug-tint`, and graceful shutdown `action quit`).
 - **Triple-Gate Approval**: PR #003 approved across QA (221/221 tests passed + live IPC verified), Security (safe handle binding and runtime directory permissions `0700`), and Code Quality (`cargo clippy --all-targets -- -D warnings` passed with 0 warnings).
-- **Next Sprint Target**: Milestone 3 - Wayland Protocol Socket & Local Client Presentation.
+### 2026-10-22 - Milestone 3 & 4 Achieved: Notch Bypass, Cursor Capture, Linux MicroVM & virtio-vsock GPU Pipeline
+- **Patches Applied**:
+  - `src/backend/metal.rs`:
+    - Fullscreen borderless window mode with direct physical display query via AppKit/CoreGraphics (`NSScreen::mainScreen().frame`), setting `NSWindowStyleMaskBorderless`, `NSWindowCollectionBehaviorFullScreenAuxiliary`, window level 25 (`NSMainMenuWindowLevel + 1`), autohiding dock and menubar, achieving full hardware display resolution (`3420x2214` spanning behind camera notch).
+    - Mouse & trackpad capture: cursor visibility set to `false`, cursor grab mode set to `CursorGrabMode::Confined`.
+    - Dedicated Apple Metal WGSL cursor pipeline rendering 64x64 RGBA8 hardware cursor texture mapped directly to `seat.get_pointer().current_location()`.
+  - `vm/proto/mod.rs` & `vm/proto/niri_ipc.h`: Wire protocol definitions, `NiriIpcPacketHeader` (magic `0x4E495249`, version 1, max 16MB), and overflow-checked SHM bounds validation (`validate_shm_bounds`).
+  - `vm/host/src/main.rs`: `niri-vsock-host` bridge daemon handling bidirectional vsock $\leftrightarrow$ Wayland UNIX socket bridging, out-of-band `SCM_RIGHTS` file descriptor forwarding, and path traversal mitigations.
+  - `vm/guest/niri_vsock_guest.c`: POSIX C guest daemon exposing `/run/user/1000/wayland-0` and reconstructing client file descriptors via `memfd_create`.
+  - `vm/host/microvm_launcher.swift`: Apple Virtualization.framework runner with sub-200ms cold boot, `VZVirtioSocketListener`, `VZVirtioFileSystemDeviceConfiguration`, and `VZVirtioGraphicsDeviceConfiguration`.
+  - `vm/scripts/test_vm_bridge.sh`: End-to-end loopback socket test harness.
+- **Triple-Gate Approval**: PR #004 approved across QA (226/226 tests passed + 5/5 host tests + bridge loopback verified), Security (ARM64 AAPCS64 HFA ABI verification, SHM bounds checking, path traversal defenses, hypervisor isolation), and Code Quality (`cargo clippy --all-targets -- -D warnings` passed with 0 warnings).
+- **Next Sprint Target**: Milestone Promotion to `main` and release runbook publication.
