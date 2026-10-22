@@ -17,6 +17,11 @@ public final class MicroVMManager: ObservableObject {
     @Published public var vsockPort: UInt32 = 1024
     @Published public var terminalLines: [String] = []
 
+    public var onRawData: ((Data) -> Void)?
+    private var recentRawBuffer = Data()
+    private let rawBufferQueue = DispatchQueue(label: "org.niri.microvm.rawbuffer")
+    private let maxRawBufferSize = 256 * 1024 // 256 KB replay window
+
     private var process: Process?
     private var stdinPipe: Pipe?
     private var stdoutPipe: Pipe?
@@ -24,6 +29,11 @@ public final class MicroVMManager: ObservableObject {
     private var bootStartTime: Date?
 
     public init() {}
+
+    public func sendRawBytes(_ data: Data) {
+        guard isRunning, let pipe = stdinPipe else { return }
+        pipe.fileHandleForWriting.write(data)
+    }
 
     public func sendCommand(_ cmd: String) {
         guard isRunning, let pipe = stdinPipe else { return }
@@ -40,9 +50,28 @@ public final class MicroVMManager: ObservableObject {
         }
     }
 
+    public func getRecentRawData() -> Data {
+        return rawBufferQueue.sync {
+            return recentRawBuffer
+        }
+    }
+
     public func clearTerminal() {
+        rawBufferQueue.sync {
+            self.recentRawBuffer.removeAll()
+        }
         DispatchQueue.main.async {
             self.terminalLines.removeAll()
+        }
+    }
+
+    private func appendRawData(_ data: Data) {
+        rawBufferQueue.sync {
+            recentRawBuffer.append(data)
+            if recentRawBuffer.count > maxRawBufferSize {
+                let excess = recentRawBuffer.count - maxRawBufferSize
+                recentRawBuffer.removeSubrange(0..<excess)
+            }
         }
     }
 
@@ -99,6 +128,12 @@ public final class MicroVMManager: ObservableObject {
             return
         }
 
+        // Ensure persistent virtual disk is configured
+        var diskToAttach = config.diskPath
+        if diskToAttach.isEmpty || !fm.fileExists(atPath: diskToAttach) {
+            diskToAttach = config.ensureDefaultDiskExists()
+        }
+
         // Ensure shared directory exists
         try? fm.createDirectory(atPath: config.sharedMemPath, withIntermediateDirectories: true, attributes: nil)
 
@@ -115,8 +150,9 @@ public final class MicroVMManager: ObservableObject {
             "--wayland-socket", waylandSocket
         ]
 
-        if !config.diskPath.isEmpty && fm.fileExists(atPath: config.diskPath) {
-            args.append(contentsOf: ["--disk", config.diskPath])
+        if !diskToAttach.isEmpty && fm.fileExists(atPath: diskToAttach) {
+            args.append(contentsOf: ["--disk", diskToAttach])
+            LogManager.shared.append(source: .microvm, message: "Attaching persistent virtual disk storage: \(diskToAttach)")
         }
 
         proc.arguments = args
@@ -131,6 +167,11 @@ public final class MicroVMManager: ObservableObject {
 
         outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
+            guard !data.isEmpty else { return }
+
+            self?.appendRawData(data)
+            self?.onRawData?(data)
+
             if let str = String(data: data, encoding: .utf8), !str.isEmpty {
                 LogManager.shared.append(source: .microvm, message: str, level: .info)
                 DispatchQueue.main.async {
@@ -149,6 +190,11 @@ public final class MicroVMManager: ObservableObject {
 
         errPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
+            guard !data.isEmpty else { return }
+
+            self?.appendRawData(data)
+            self?.onRawData?(data)
+
             if let str = String(data: data, encoding: .utf8), !str.isEmpty {
                 LogManager.shared.append(source: .microvm, message: str, level: .warn)
                 DispatchQueue.main.async {
@@ -202,7 +248,6 @@ public final class MicroVMManager: ObservableObject {
     }
 
     private func stripAnsiEscapes(_ text: String) -> String {
-        // Regex pattern to strip ANSI escape codes
         return text.replacingOccurrences(of: "\\x1B\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression)
     }
 

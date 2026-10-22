@@ -105,3 +105,23 @@
     - Verified 100% pass rate in <2s with Arch Linux ARM client presented in Niri.
 - **Triple-Gate Approval**: PR #006 approved across QA (226 tests passed + strict windowed verification), Security (stdio isolation, 0700 XDG, Level 0 scoping), and Code Review (zero warnings, valid codesign).
 - **Promotion Target**: PR #006 cleared for merge into `dev` and promotion to `main` with production release tag `v0.3.0-macos`.
+
+### 2026-10-22 - Milestone 8 Achieved: Persistent Virtual Disk Storage, OverlayFS Integration, VM Manager GUI, & SwiftTerm Hardware-Accelerated Terminal
+- **Patches Applied**:
+  - `vm/guest/init.sh` & `vm/scripts/install_arch_assets.sh`:
+    - Persistent virtio-blk `/dev/vda` detection, automated `mkfs.ext4 -F -m 1 /dev/vda` formatting on pristine disks, and mounting at `/mnt/storage`.
+    - Integrated `overlay.ko` (extracted from `linux-aarch64`) activating OverlayFS over `/usr`, `/var`, `/etc`, `/root`, and bind-mounting `/home`.
+    - Included `util-linux-libs` (`libblkid.so.1`, `libuuid.so.1`) and `file` (`libmagic.so.1`) so `mkfs.ext4` runs dynamically without missing shared library dependencies.
+    - Verified storage persistence across full VM reboots; pacman downloads and package installations persist on disk with 20GB-128GB capacity, solving storage constraints for large applications like Firefox.
+  - `apps/niri_mac_gui`:
+    - `VMManagerView.swift`: Dedicated VM Manager interface with live hardware stats, active storage metrics (logical size vs physical APFS sparse usage), virtual disk creation presets (10GB, 20GB, 40GB, 64GB, 128GB), storage wiping (factory reset), and disk deletion safeguards.
+    - `LinuxTerminalView.swift`: Completely reworked terminal using Miguel de Icaza's `SwiftTerm` library. Built full VT100/Xterm ANSI terminal emulator with live bi-directional byte streaming, font zoom controls, signal shortcuts (Ctrl+C, Ctrl+D, Ctrl+L), quick command chips, and rolling replay buffer.
+    - `LauncherConfig.swift`: Virtual disk management APIs (`createVirtualDisk`, `wipeVirtualDisk`, `deleteVirtualDisk`, `listVirtualDisks`), instant APFS sparse disk creation via `ftruncate`.
+    - `MicroVMManager.swift`: Bi-directional raw byte streaming (`sendRawBytes`, `onRawData`), automated disk attachment (`--disk`), and rolling raw buffer.
+    - `ContentView.swift`: Integrated `VM Manager` navigation tab.
+  - `scripts/package_app.sh`:
+    - Linked `libSwiftTerm.a` and `SwiftTerm.swiftmodule` with `-warnings-as-errors`, packaged standalone `dist/Niri.app`.
+  - `vm/scripts/test_vm_client_in_niri.sh`:
+    - Verified strict windowed mode end-to-end integration test with persistent virtual disk attached.
+- **Triple-Gate Approval**: PR #008 approved across QA (live windowed test pass, persistent disk and reboot tests pass), Security (VirtIO storage device sandboxing, deletion safety checks, codesign entitlements), and Code Quality (`cargo clippy -- -D warnings` and `swiftc -warnings-as-errors` pass with 0 warnings).
+- **Promotion Target**: PR #008 cleared for merge into `dev` and promotion to `main` with production release tag `v0.5.0-vm-storage-terminal`.

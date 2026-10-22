@@ -74,11 +74,15 @@ export NIRI_SOCKET="${NIRI_IPC_SOCK}"
 # Query Niri version via IPC
 "${REPO_ROOT}/target/debug/niri" msg version
 
-# Launch MicroVM connecting to Niri's Wayland socket
+# Launch MicroVM connecting to Niri's Wayland socket with persistent virtual disk
 echo "[VM] Launching Linux MicroVM via Apple Virtualization..."
+TEST_DISK="${TEST_RUNTIME}/test_disk.img"
+truncate -s 20G "${TEST_DISK}"
+
 "${REPO_ROOT}/target/microvm_launcher" \
     --kernel "${REPO_ROOT}/vm/images/Image" \
     --initrd "${REPO_ROOT}/vm/images/initramfs.cpio.gz" \
+    --disk "${TEST_DISK}" \
     --cpus 2 \
     --memory 1024 \
     --wayland-socket "${WAYLAND_SOCK}" \

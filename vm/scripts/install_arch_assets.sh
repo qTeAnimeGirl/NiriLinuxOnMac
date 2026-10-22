@@ -152,6 +152,8 @@ CORE_PACKAGE_LIST=(
     "libidn2"
     "libunistring"
     "brotli"
+    "util-linux-libs"
+    "file"
 )
 
 RESOLVED_PACKAGES=()
@@ -418,8 +420,8 @@ echo "Firefox launched in background!"
 EOF
 chmod 755 usr/bin/install-firefox
 
-# 4i. Extract essential VirtIO, network, and VSOCK kernel modules
-echo "[BUNDLE] Extracting VirtIO, Net, and VSOCK kernel modules..."
+# 4i. Extract essential VirtIO, network, storage, and VSOCK kernel modules
+echo "[BUNDLE] Extracting VirtIO, Net, Storage, and VSOCK kernel modules..."
 tar -xf "${LINUX_PKG_PATH}" -C "${STAGE_DIR}" \
   'usr/lib/modules/*/kernel/drivers/char/hw_random/virtio-rng.ko' \
   'usr/lib/modules/*/kernel/drivers/gpu/drm/virtio/virtio-gpu.ko' \
@@ -427,6 +429,7 @@ tar -xf "${LINUX_PKG_PATH}" -C "${STAGE_DIR}" \
   'usr/lib/modules/*/kernel/drivers/net/virtio_net.ko' \
   'usr/lib/modules/*/kernel/drivers/virtio/*' \
   'usr/lib/modules/*/kernel/fs/fuse/*' \
+  'usr/lib/modules/*/kernel/fs/overlayfs/*' \
   'usr/lib/modules/*/kernel/net/core/failover.ko' \
   'usr/lib/modules/*/kernel/net/vmw_vsock/*' 2>/dev/null || true
 
@@ -467,14 +470,48 @@ mount -t tmpfs none /tmp 2>/dev/null || true
 # 2. Update dynamic linker cache
 /usr/bin/ldconfig 2>/dev/null || true
 
-# 3. Load VirtIO kernel drivers
-for mod in failover net_failover virtio_net vsock vmw_vsock_virtio_transport_common vmw_vsock_virtio_transport fuse virtiofs virtio-gpu virtio-rng; do
+# 3. Load VirtIO & Filesystem kernel drivers
+for mod in failover net_failover virtio_net vsock vmw_vsock_virtio_transport_common vmw_vsock_virtio_transport fuse virtiofs virtio-gpu virtio-rng overlay; do
     if [ -f "/lib/modules/${mod}.ko" ]; then
         insmod "/lib/modules/${mod}.ko" 2>/dev/null || true
     elif command -v find >/dev/null 2>&1; then
         find /usr/lib/modules -name "${mod}.ko" -exec insmod {} \; 2>/dev/null || true
     fi
 done
+
+# 3b. Setup Persistent Block Storage (/dev/vda) if attached
+if [ -b /dev/vda ]; then
+    echo "[GUEST INIT] Virtual disk storage device /dev/vda detected."
+    # If not formatted with ext4, format it automatically
+    if ! blkid /dev/vda 2>/dev/null | grep -q ext4; then
+        echo "[GUEST INIT] Formatting /dev/vda as persistent ext4 storage..."
+        /usr/bin/mkfs.ext4 -F -m 1 /dev/vda 2>/dev/null || mke2fs -t ext4 -F /dev/vda 2>/dev/null || true
+    fi
+
+    mkdir -p /mnt/storage
+    if mount -t ext4 /dev/vda /mnt/storage 2>/dev/null; then
+        STORAGE_TOTAL=$(df -h /mnt/storage 2>/dev/null | awk 'NR==2 {print $2}')
+        STORAGE_FREE=$(df -h /mnt/storage 2>/dev/null | awk 'NR==2 {print $4}')
+        echo "[GUEST INIT] Mounted persistent virtual disk at /mnt/storage (${STORAGE_TOTAL} capacity, ${STORAGE_FREE} free)."
+
+        # Enable OverlayFS persistence on /usr and /var so all pacman downloads & package installs use the disk!
+        if grep -q overlay /proc/filesystems 2>/dev/null || insmod /lib/modules/overlay.ko 2>/dev/null; then
+            mkdir -p /mnt/storage/usr_upper /mnt/storage/usr_work
+            mkdir -p /mnt/storage/var_upper /mnt/storage/var_work
+            mkdir -p /mnt/storage/etc_upper /mnt/storage/etc_work
+            mkdir -p /mnt/storage/root_upper /mnt/storage/root_work
+            mkdir -p /mnt/storage/home
+
+            mount -t overlay overlay -o lowerdir=/usr,upperdir=/mnt/storage/usr_upper,workdir=/mnt/storage/usr_work /usr 2>/dev/null || true
+            mount -t overlay overlay -o lowerdir=/var,upperdir=/mnt/storage/var_upper,workdir=/mnt/storage/var_work /var 2>/dev/null || true
+            mount -t overlay overlay -o lowerdir=/etc,upperdir=/mnt/storage/etc_upper,workdir=/mnt/storage/etc_work /etc 2>/dev/null || true
+            mount -t overlay overlay -o lowerdir=/root,upperdir=/mnt/storage/root_upper,workdir=/mnt/storage/root_work /root 2>/dev/null || true
+            mount --bind /mnt/storage/home /home 2>/dev/null || true
+
+            echo "[GUEST INIT] OverlayFS persistence activated! Free application storage: ${STORAGE_FREE}"
+        fi
+    fi
+fi
 
 # 4. Setup network interface, DHCP, and DNS
 ip link set lo up 2>/dev/null || ifconfig lo 127.0.0.1 up 2>/dev/null || true
