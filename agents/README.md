@@ -34,6 +34,7 @@
 | #6 | `agent/arch/arch-vm-gui-terminal` | Milestone 6: Clean Arch Linux ARM MicroVM, In-App Terminal, Windowed Testing, & Single-Workspace Fullscreen | ✅ PASS (226 tests + windowed live) | ✅ PASS (Stdio sandbox, 0700 XDG, Level 0 space) | ✅ APPROVED (Zero warnings Swift/Rust, codesigned) | MERGED to `dev` |
 | #7 | `agent/arch/arch-vm-gui-terminal` | Milestone 7: Automated Arch Linux ARM Installer with Pacman, NAT Network, Terminal Shortcuts & Wayland Presentation | ✅ PASS (203 tests + live VM in Niri) | ✅ PASS (NAT sandbox, mode 0666 socket) | ✅ APPROVED (Zero warnings Swift/Rust, codesigned) | MERGED to `main` |
 | #8 | `agent/vm/persistent-disk-terminal-manager` | Milestone 8: Persistent Virtual Disk Storage, OverlayFS Integration, VM Manager GUI, & SwiftTerm Hardware-Accelerated Terminal | ✅ PASS (Windowed live test + reboot test) | ✅ PASS (VirtIO block isolation, deletion safety) | ✅ APPROVED (Zero warnings Swift/Rust, codesigned) | MERGED to `dev` / `main` |
+| #10 | `agent/vm/pacman-alpm-db-fix` | Sprint: ALPM Database Version 9 (`ALPM_DB_VERSION`), `/dev/fd` POSIX Symlinks, & Live `pacman -Sy` Upstream Mirror Sync | ✅ PASS (In-VM pacman -Sy sync, live Niri window) | ✅ PASS (Procfs isolation, wrapper shell safety) | ✅ APPROVED (Zero clippy warnings, clean PTY harness) | MERGED to `dev` / `main` |
 
 ---
 
