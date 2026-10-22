@@ -13,3 +13,24 @@
 - Drafted system architecture specifications covering host AppKit/Metal compositor and guest microVM bridge.
 - Formulated interface contracts in C/Rust header (`interface_contracts.h`).
 - Established Triple-Gate review template and recorded PR #001 approval.
+
+### [2026-10-22T01:15:00+01:00] Milestone 1 - Platform Decoupling & Darwin Headless Test Verification
+- **Patched `reis`**:
+  - Replaced Linux-only `SendFlags::NOSIGNAL` with `SendFlags::empty()` on Darwin.
+  - Replaced `RecvFlags::CMSG_CLOEXEC` with Darwin-compatible socket options.
+- **Patched `smithay`**:
+  - Updated `sealed_file.rs` for `rand 0.10.3` compatibility.
+  - Implemented `AppKitWindow` implementing `EGLNativeSurface`.
+  - Replaced file-descriptor event loop on Darwin with `calloop::ping`.
+  - Decoupled `wayland-egl`, `wayland-client`, and `wayland-cursor` in `backend_winit` on macOS.
+  - Enabled `"client"` features in `wayland-protocols*` to generate pure-Rust client interface bindings.
+- **Decoupled `niri`**:
+  - Configured conditional compilation gating Linux-only TTY/DRM renderer (`RenderElement<TtyRenderer>` macro and direct implementations) behind `#[cfg(target_os = "linux")]`.
+  - Implemented pure-Rust mock types (`mock_input`, `mock_pango`) removing external C dependency bottlenecks.
+  - Gated Linux-only `DrmLeaseHandler` and `GammaControlHandler` calls cleanly.
+  - Configured Darwin linker arguments (`-L/opt/homebrew/lib`) in `.cargo/config.toml`.
+- **Validation**:
+  - `cargo check --workspace`: 0 warnings, 0 errors.
+  - `cargo clippy --all-targets -- -D warnings`: 0 warnings, 0 errors.
+  - `cargo test --workspace`: 221 tests passed, 0 failed.
+- **Triple-Gate Sign-off**: Archived in `agents/reviews/records/PR_002_approval.md`. Merged to `dev`.

@@ -28,3 +28,12 @@
 - **Git Topology**: Configured author metadata (`qTeAnimeGirl`), established `main` and `dev` branches.
 - **Workspace**: Built `agents/` topology, instructions, reviews, logs, and specs.
 - **Sprint Target**: Begin Milestone 1 decoupling on branch `agent/smithay/decouple-macos`.
+
+### 2026-10-22 - Milestone 1 Achieved: Decoupled & Verified on macOS Darwin
+- **Patches Applied**:
+  - `reis`: macOS socket flags `NOSIGNAL` and `CMSG_CLOEXEC` fallback.
+  - `smithay`: Decoupled `wayland-egl`/`wayland-client` under Darwin; added `AppKitWindow` implementing `EGLNativeSurface`; non-FD Calloop event loop ping; pure-Rust Wayland backend (`wayland-backend`).
+  - `niri`: Decoupled Linux DRM/TTY renderer (`TtyRenderer` gated behind `#[cfg(target_os = "linux")]`); provided pure-Rust `mock_input` and `mock_pango` abstractions; gated `DrmLeaseHandler` and `GammaControlHandler`.
+  - `niri-config`: Decoupled `backend_libinput` under macOS.
+- **Triple-Gate Approval**: PR #002 approved across QA (221/221 tests passed), Security (memory audits on unsafe blocks), and Code Quality (`cargo clippy --all-targets -- -D warnings` passed with 0 warnings).
+- **Next Sprint Target**: Milestone 2 - Native AppKit window container + Metal viewport (`CAMetalLayer`) hooked into Niri rendering pipeline.
