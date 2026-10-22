@@ -1,7 +1,7 @@
 # Swarm Operations Dashboard
 
-## Current Sprint: Milestone 1 & 2 Bootstrap
-**Focus**: Platform Decoupling, Headless macOS Compilation, and AppKit/Metal Host Pipeline.
+## Current Sprint: Milestone 3 Initiation
+**Focus**: Wayland Protocol Socket & Local Client Presentation.
 
 ### Task Board
 
@@ -10,8 +10,8 @@
 | M1-T1 | Decouple Linux subsystems (DRM, GBM, libinput, seatd) behind `#[cfg(target_os = "linux")]` | Rust/Smithay Engineer | ✅ COMPLETED | Triple-Gate Cleared |
 | M1-T2 | Implement mock/headless backend abstraction for `aarch64-apple-darwin` | Rust/Smithay Engineer | ✅ COMPLETED | Triple-Gate Cleared |
 | M1-T3 | Headless integration test harness & Darwin target build (221/221 passed) | QA Deep Test Engineer | ✅ COMPLETED | Triple-Gate Cleared |
-| M2-T1 | AppKit window container + CAMetalLayer swapchain integration | Rust/Smithay Engineer | In Progress | Gate 1 (QA) |
-| M3-T1 | Wayland UNIX domain socket forwarding to Smithay Calloop loop | VM & Graphics Engineer | Queued | Gate 2 (Sec) |
+| M2-T1 | AppKit window container + CAMetalLayer swapchain integration | Rust/Smithay Engineer | ✅ COMPLETED | Triple-Gate Cleared |
+| M3-T1 | Wayland UNIX domain socket hosting & local client presentation | Rust/Smithay Engineer | In Progress | Gate 1 (QA) |
 | M4-T1 | MicroVM runner (Virtualization.framework / QEMU) + virtio-vsock tunnel | VM & Graphics Engineer | Queued | Gate 2 (Sec) |
 
 ---
@@ -22,6 +22,7 @@
 |---|---|---|---|---|---|---|
 | #1 | `agent/arch/repo-init` | Phase 0/1: Scaffold Swarm Architecture & Repo Topology | ✅ PASS | ✅ PASS | ✅ APPROVED | MERGED to `dev` |
 | #2 | `agent/smithay/decouple-macos` | Milestone 1: Platform Decoupling & Native macOS Darwin Compilation | ✅ PASS (221 tests) | ✅ PASS | ✅ APPROVED (clippy clean) | MERGED to `dev` |
+| #3 | `agent/smithay/appkit-metal-backend` | Milestone 2: Native AppKit Window Hosting & Apple Metal wgpu Pipeline | ✅ PASS (221 tests + IPC) | ✅ PASS | ✅ APPROVED (clippy clean) | MERGED to `dev` |
 
 ---
 

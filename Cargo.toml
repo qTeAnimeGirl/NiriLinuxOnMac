@@ -101,6 +101,10 @@ features = [
     "wayland_frontend",
 ]
 
+[target.'cfg(target_os = "macos")'.dependencies]
+pollster = "1.0.1"
+wgpu = { version = "24", default-features = false, features = ["metal", "wgsl"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 accesskit_unix = { version = "0.23", optional = true }
 drm-ffi = "0.9.1"

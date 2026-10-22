@@ -24,6 +24,9 @@ pub enum Error {
     /// Unable to obtain a valid EGL Display
     #[error("Unable to obtain a valid EGL Display.")]
     DisplayNotSupported,
+    /// Failed to load libEGL library
+    #[error("Failed to load libEGL library: {0}")]
+    LibraryLoadError(String),
     /// `eglInitialize` returned an error
     #[error("Failed to initialize EGL. Err: {0:}")]
     InitFailed(#[source] EGLError),

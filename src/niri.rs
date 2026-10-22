@@ -132,7 +132,11 @@ use crate::animation::Clock;
 use crate::backend::tty::SurfaceDmabufFeedback;
 #[cfg(target_os = "linux")]
 use crate::backend::Tty;
-use crate::backend::{Backend, Headless, RenderResult, Winit};
+use crate::backend::{Backend, Headless, RenderResult};
+#[cfg(not(target_os = "macos"))]
+use crate::backend::Winit;
+#[cfg(target_os = "macos")]
+use crate::backend::Metal;
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_locale1::Locale1ToNiri;
@@ -800,7 +804,16 @@ impl State {
             Backend::Tty(tty)
         };
 
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        let mut backend = if headless {
+            let headless = Headless::new();
+            Backend::Headless(headless)
+        } else {
+            let metal = Metal::new(config.clone(), event_loop.clone())?;
+            Backend::Metal(metal)
+        };
+
+        #[cfg(all(not(target_os = "linux"), not(target_os = "macos")))]
         let mut backend = if headless {
             let headless = Headless::new();
             Backend::Headless(headless)

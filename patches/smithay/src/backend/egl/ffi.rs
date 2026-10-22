@@ -85,10 +85,15 @@ pub fn make_sure_egl_is_loaded() -> Result<Vec<String>, Error> {
     }
     let proc_address = constrain(|sym| unsafe { super::get_proc_address(sym) });
 
+    let lib = match &*egl::LIB {
+        Ok(lib) => lib,
+        Err(err) => return Err(Error::LibraryLoadError(err.to_string())),
+    };
+
     egl::LOAD.call_once(|| unsafe {
         egl::load_with(|sym| {
             let name = CString::new(sym).unwrap();
-            let symbol = egl::LIB.get::<*mut c_void>(name.as_bytes());
+            let symbol = lib.get::<*mut c_void>(name.as_bytes());
             match symbol {
                 Ok(x) => *x as *const _,
                 Err(_) => ptr::null(),
@@ -144,8 +149,21 @@ pub mod egl {
     use libloading::Library;
     use std::sync::{LazyLock, Once};
 
-    pub static LIB: LazyLock<Library> =
-        LazyLock::new(|| unsafe { Library::new("libEGL.so.1") }.expect("Failed to load LibEGL"));
+    pub static LIB: LazyLock<Result<Library, libloading::Error>> = LazyLock::new(|| unsafe {
+        #[cfg(target_os = "macos")]
+        {
+            Library::new("libEGL.dylib")
+                .or_else(|_| Library::new("libEGL.so.1"))
+                .or_else(|_| Library::new("libEGL.so"))
+                .or_else(|_| Library::new("/opt/homebrew/lib/libEGL.dylib"))
+                .or_else(|_| Library::new("/usr/local/lib/libEGL.dylib"))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Library::new("libEGL.so.1")
+                .or_else(|_| Library::new("libEGL.so"))
+        }
+    });
 
     pub static LOAD: Once = Once::new();
     pub static DEBUG: Once = Once::new();

@@ -59,6 +59,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_ansi_sanitization(false)
         .init();
 
+    #[cfg(target_os = "macos")]
+    if env::var_os("XDG_RUNTIME_DIR").is_none() {
+        let uid = unsafe { libc::getuid() };
+        let runtime_dir = std::env::temp_dir().join(format!("niri-runtime-{uid}"));
+        let _ = std::fs::create_dir_all(&runtime_dir);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&runtime_dir, std::fs::Permissions::from_mode(0o700));
+        }
+        env::set_var("XDG_RUNTIME_DIR", &runtime_dir);
+        info!("Set default macOS XDG_RUNTIME_DIR to {}", runtime_dir.display());
+    }
+
     if env::var_os("NOTIFY_SOCKET").is_some() {
         IS_SYSTEMD_SERVICE.store(true, Ordering::Relaxed);
 
