@@ -1,0 +1,14 @@
+[package]
+name = "niri-vsock-host"
+version = "0.1.0"
+edition = "2021"
+authors = ["Niri VM & Graphics Bridge Systems Engineer"]
+description = "virtio-vsock Wayland bridge host daemon for Niri on macOS"
+
+[workspace]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+libc = "0.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

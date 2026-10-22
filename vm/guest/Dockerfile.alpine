@@ -1,0 +1,27 @@
+# vm/guest/Dockerfile.alpine
+# Container recipe to assemble minimal aarch64 Linux guest rootfs for Niri
+
+FROM --platform=linux/arm64 alpine:edge
+
+RUN apk update && apk add --no-cache \
+    musl \
+    libxkbcommon \
+    wayland-libs-client \
+    wayland-libs-cursor \
+    mesa-vulkan-virtio \
+    mesa-dri-gallium \
+    vulkan-loader \
+    foot \
+    vulkan-tools \
+    build-base \
+    linux-headers
+
+COPY vm/proto/niri_ipc.h /tmp/proto/niri_ipc.h
+COPY vm/guest/niri_vsock_guest.c /tmp/niri_vsock_guest.c
+RUN gcc -O2 -Wall -Wextra -pthread -I/tmp/proto /tmp/niri_vsock_guest.c -o /usr/local/bin/niri_vsock_guest && \
+    chmod +x /usr/local/bin/niri_vsock_guest
+
+COPY vm/guest/init.sh /init
+RUN chmod +x /init
+
+CMD ["/init"]
