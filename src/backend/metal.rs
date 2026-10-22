@@ -55,18 +55,47 @@ impl Metal {
     ) -> anyhow::Result<Self> {
         let _span = tracy_client::span!("Metal::new");
 
-        // Request borderless fullscreen by default
+        let is_windowed = std::env::var("NIRI_WINDOWED")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let notch_bypass = !is_windowed
+            && std::env::var("NIRI_NOTCH_BYPASS")
+                .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+                .unwrap_or(true);
+
+        let default_width = if notch_bypass { 1280.0 } else { 1920.0 };
+        let default_height = if notch_bypass { 800.0 } else { 1080.0 };
+        let width: f64 = std::env::var("NIRI_WIDTH")
+            .ok()
+            .and_then(|w| w.parse().ok())
+            .unwrap_or(default_width);
+        let height: f64 = std::env::var("NIRI_HEIGHT")
+            .ok()
+            .and_then(|h| h.parse().ok())
+            .unwrap_or(default_height);
+
+        // Request borderless fullscreen by default unless windowed mode requested
         let builder = WindowAttributes::default()
-            .with_surface_size(LogicalSize::new(1280.0, 800.0))
+            .with_surface_size(LogicalSize::new(width, height))
             .with_title("niri")
-            .with_decorations(false);
+            .with_decorations(!notch_bypass);
 
         let (window, winit_event_loop) = winit::init_window_and_event_loop(builder)
             .map_err(|err| anyhow::anyhow!("error initializing winit window: {err:?}"))?;
 
-        // Capture mouse and trackpad: hide system cursor and confine to window
-        window.set_cursor_visible(false);
-        let _ = window.set_cursor_grab(CursorGrabMode::Confined);
+        if notch_bypass {
+            // Capture mouse and trackpad: hide system cursor and confine to window
+            window.set_cursor_visible(false);
+            let _ = window.set_cursor_grab(CursorGrabMode::Confined);
+        } else {
+            // In windowed mode, hide OS cursor over canvas so Niri's hardware-accelerated cursor is drawn
+            let hide_cursor = std::env::var("NIRI_HIDE_CURSOR")
+                .map(|v| v != "0" && !v.eq_ignore_ascii_case("false"))
+                .unwrap_or(true);
+            if hide_cursor {
+                window.set_cursor_visible(false);
+            }
+        }
 
         // Bypass macOS camera notch: expand window frame across the full physical screen
         let raw_window_handle = window
@@ -78,11 +107,13 @@ impl Metal {
             .map_err(|err| anyhow::anyhow!("display handle error: {err:?}"))?
             .as_raw();
 
-        if let smithay::reexports::winit::raw_window_handle::RawWindowHandle::AppKit(handle) = raw_window_handle {
-            // SAFETY: handle.ns_view is a valid NonNull pointer to the window's NSView provided by winit,
-            // and this initialization occurs on the main thread during compositor startup.
-            unsafe {
-                bypass_macos_notch(handle.ns_view.as_ptr());
+        if notch_bypass {
+            if let smithay::reexports::winit::raw_window_handle::RawWindowHandle::AppKit(handle) = raw_window_handle {
+                // SAFETY: handle.ns_view is a valid NonNull pointer to the window's NSView provided by winit,
+                // and this initialization occurs on the main thread during compositor startup.
+                unsafe {
+                    bypass_macos_notch(handle.ns_view.as_ptr());
+                }
             }
         }
 

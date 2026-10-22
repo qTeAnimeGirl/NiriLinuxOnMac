@@ -1,2 +1,6 @@
 [target.aarch64-apple-darwin]
 rustflags = ["-C", "link-arg=-L/opt/homebrew/lib"]
+
+[target.aarch64-unknown-linux-musl]
+linker = "/Users/qteanimegirl/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/gcc-ld/ld.lld"
+

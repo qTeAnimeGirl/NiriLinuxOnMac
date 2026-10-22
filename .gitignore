@@ -3,6 +3,7 @@ target/
 **/target/
 **/*.rs.bk
 Cargo.lock
+dist/
 
 # MicroVM disk images, kernels, and rootfs
 *.img
