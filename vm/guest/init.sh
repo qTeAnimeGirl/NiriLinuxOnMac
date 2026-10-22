@@ -27,6 +27,12 @@ mount -t devtmpfs none /dev 2>/dev/null || true
 mount -t tmpfs none /run 2>/dev/null || true
 mount -t tmpfs none /tmp 2>/dev/null || true
 
+# Standard POSIX /dev symlinks
+ln -sf /proc/self/fd /dev/fd 2>/dev/null || true
+ln -sf /proc/self/fd/0 /dev/stdin 2>/dev/null || true
+ln -sf /proc/self/fd/1 /dev/stdout 2>/dev/null || true
+ln -sf /proc/self/fd/2 /dev/stderr 2>/dev/null || true
+
 # 3. Load VirtIO drivers if available as modules
 for mod in failover net_failover virtio_net vsock vmw_vsock_virtio_transport_common vmw_vsock_virtio_transport fuse virtiofs virtio-gpu virtio-rng overlay; do
     find /usr/lib/modules -name "${mod}.ko" -exec insmod {} \; 2>/dev/null || true
@@ -56,12 +62,16 @@ if [ -b /dev/vda ]; then
             # Seed pacman local database from initramfs to persistent storage if missing
             mkdir -p /mnt/storage/var_upper/lib/pacman/local
             cp -rn /var/lib/pacman/local/* /mnt/storage/var_upper/lib/pacman/local/ 2>/dev/null || true
+            echo "9" > /mnt/storage/var_upper/lib/pacman/local/ALPM_DB_VERSION
+            echo "9" > /var/lib/pacman/local/ALPM_DB_VERSION
 
             mount -t overlay overlay -o lowerdir=/usr,upperdir=/mnt/storage/usr_upper,workdir=/mnt/storage/usr_work /usr 2>/dev/null || true
             mount -t overlay overlay -o lowerdir=/var,upperdir=/mnt/storage/var_upper,workdir=/mnt/storage/var_work /var 2>/dev/null || true
             mount -t overlay overlay -o lowerdir=/etc,upperdir=/mnt/storage/etc_upper,workdir=/mnt/storage/etc_work /etc 2>/dev/null || true
             mount -t overlay overlay -o lowerdir=/root,upperdir=/mnt/storage/root_upper,workdir=/mnt/storage/root_work /root 2>/dev/null || true
             mount --bind /mnt/storage/home /home 2>/dev/null || true
+
+            echo "9" > /var/lib/pacman/local/ALPM_DB_VERSION
 
             echo "[GUEST INIT] OverlayFS persistence activated! Free application storage: ${STORAGE_FREE}"
 
@@ -116,6 +126,7 @@ fi
 
 # 5. Setup runtime and shared directories
 mkdir -p /run/user/1000 /dev/shm /tmp /var/log /var/cache/pacman/pkg /var/lib/pacman/local /var/lib/pacman/sync
+echo "9" > /var/lib/pacman/local/ALPM_DB_VERSION
 mount -t tmpfs none /dev/shm 2>/dev/null || true
 
 # Mount virtio-fs host share if available

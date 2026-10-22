@@ -324,6 +324,16 @@ for pkg in pkg_paths:
 print(f'[PACMAN] Successfully indexed {count} core packages into local ALPM database.')
 PYEOF
 
+# Ensure pacman 7.1 / ALPM 16 database version is set to 9
+echo "9" > "${STAGE_DIR}/var/lib/pacman/local/ALPM_DB_VERSION"
+
+# Ensure standard POSIX /dev symlinks exist in stage directory
+mkdir -p "${STAGE_DIR}/dev"
+ln -sf /proc/self/fd "${STAGE_DIR}/dev/fd" 2>/dev/null || true
+ln -sf /proc/self/fd/0 "${STAGE_DIR}/dev/stdin" 2>/dev/null || true
+ln -sf /proc/self/fd/1 "${STAGE_DIR}/dev/stdout" 2>/dev/null || true
+ln -sf /proc/self/fd/2 "${STAGE_DIR}/dev/stderr" 2>/dev/null || true
+
 # Deploy /usr/local/bin/pacman transparent wrapper enforcing --overwrite '*'
 mkdir -p usr/local/bin
 cat << 'EOF' > usr/local/bin/pacman
@@ -404,6 +414,7 @@ EOF
 
 # 4d. Configure pacman.conf and mirrorlist
 mkdir -p etc/pacman.d var/lib/pacman/sync var/lib/pacman/local var/cache/pacman/pkg var/log
+echo "9" > var/lib/pacman/local/ALPM_DB_VERSION
 cat << 'EOF' > etc/pacman.conf
 #
 # /etc/pacman.conf - Niri Arch Linux ARM MicroVM configuration
@@ -581,6 +592,12 @@ mount -t devtmpfs none /dev 2>/dev/null || true
 mount -t tmpfs none /run 2>/dev/null || true
 mount -t tmpfs none /tmp 2>/dev/null || true
 
+# Standard POSIX /dev symlinks
+ln -sf /proc/self/fd /dev/fd 2>/dev/null || true
+ln -sf /proc/self/fd/0 /dev/stdin 2>/dev/null || true
+ln -sf /proc/self/fd/1 /dev/stdout 2>/dev/null || true
+ln -sf /proc/self/fd/2 /dev/stderr 2>/dev/null || true
+
 # 2. Update dynamic linker cache
 /usr/bin/ldconfig 2>/dev/null || true
 
@@ -619,12 +636,16 @@ if [ -b /dev/vda ]; then
             # Seed initial pacman local database to persistent storage if missing
             mkdir -p /mnt/storage/var_upper/lib/pacman/local
             cp -rn /var/lib/pacman/local/* /mnt/storage/var_upper/lib/pacman/local/ 2>/dev/null || true
+            echo "9" > /mnt/storage/var_upper/lib/pacman/local/ALPM_DB_VERSION
+            echo "9" > /var/lib/pacman/local/ALPM_DB_VERSION
 
             mount -t overlay overlay -o lowerdir=/usr,upperdir=/mnt/storage/usr_upper,workdir=/mnt/storage/usr_work /usr 2>/dev/null || true
             mount -t overlay overlay -o lowerdir=/var,upperdir=/mnt/storage/var_upper,workdir=/mnt/storage/var_work /var 2>/dev/null || true
             mount -t overlay overlay -o lowerdir=/etc,upperdir=/mnt/storage/etc_upper,workdir=/mnt/storage/etc_work /etc 2>/dev/null || true
             mount -t overlay overlay -o lowerdir=/root,upperdir=/mnt/storage/root_upper,workdir=/mnt/storage/root_work /root 2>/dev/null || true
             mount --bind /mnt/storage/home /home 2>/dev/null || true
+
+            echo "9" > /var/lib/pacman/local/ALPM_DB_VERSION
 
             echo "[GUEST INIT] OverlayFS persistence activated! Free application storage: ${STORAGE_FREE}"
 
@@ -673,6 +694,7 @@ fi
 
 # 5. Setup runtime directories and permissions
 mkdir -p /run/user/1000 /dev/shm /tmp /var/log /var/cache/pacman/pkg /var/lib/pacman/local /var/lib/pacman/sync
+echo "9" > /var/lib/pacman/local/ALPM_DB_VERSION
 mount -t tmpfs none /dev/shm 2>/dev/null || true
 
 # Mount virtio-fs host share if tag exists

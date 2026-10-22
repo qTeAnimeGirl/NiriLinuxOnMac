@@ -106,7 +106,13 @@
 - **Triple-Gate Approval**: PR #006 approved across QA (226 tests passed + strict windowed verification), Security (stdio isolation, 0700 XDG, Level 0 scoping), and Code Review (zero warnings, valid codesign).
 - **Promotion Target**: PR #006 cleared for merge into `dev` and promotion to `main` with production release tag `v0.3.0-macos`.
 
-### 2026-10-22 - Milestone 8 Achieved: Persistent Virtual Disk Storage, OverlayFS Integration, VM Manager GUI, & SwiftTerm Hardware-Accelerated Terminal
+### 2026-10-22 - Sprint Fix: Pacman ALPM Database Version 9 & `/dev/fd` POSIX Symlinks
+- **Assigned Domain Engineer**: `vm_virtio_eng`
+- **Objective**: Fix ALPM database version initialization (`/var/lib/pacman/local/ALPM_DB_VERSION` = 9), create standard POSIX symlinks (`/dev/fd -> /proc/self/fd`, `/dev/stdin`, `/dev/stdout`, `/dev/stderr`), and test live package synchronization (`pacman -Sy`) in running MicroVM.
+- **Assigned QA Engineer**: `qa_deep_test_eng` (Execute end-to-end VM pacman test and verify live package sync without errors).
+- **Assigned Security Engineer**: `security_engineer` (Audit `/dev` permissions and database integrity).
+- **Assigned Code Reviewer**: `code_reviewer` (Review patch compliance and error handling).
+
 - **Patches Applied**:
   - `vm/guest/init.sh` & `vm/scripts/install_arch_assets.sh`:
     - Persistent virtio-blk `/dev/vda` detection, automated `mkfs.ext4 -F -m 1 /dev/vda` formatting on pristine disks, and mounting at `/mnt/storage`.
