@@ -36,4 +36,10 @@
   - `niri`: Decoupled Linux DRM/TTY renderer (`TtyRenderer` gated behind `#[cfg(target_os = "linux")]`); provided pure-Rust `mock_input` and `mock_pango` abstractions; gated `DrmLeaseHandler` and `GammaControlHandler`.
   - `niri-config`: Decoupled `backend_libinput` under macOS.
 - **Triple-Gate Approval**: PR #002 approved across QA (221/221 tests passed), Security (memory audits on unsafe blocks), and Code Quality (`cargo clippy --all-targets -- -D warnings` passed with 0 warnings).
-- **Next Sprint Target**: Milestone 2 - Native AppKit window container + Metal viewport (`CAMetalLayer`) hooked into Niri rendering pipeline.
+
+### 2026-10-22 - Milestone 2 Achieved: Native AppKit Window Hosting & Apple Metal wgpu Pipeline
+- **Patches Applied**:
+  - `smithay`: Added `init_window_and_event_loop` decoupling window/event loop instantiation from EGL context creation; replaced panicking `LazyLock::expect` in EGL loader with graceful `Result<Library, libloading::Error>` fallback (`libEGL.dylib` -> `libEGL.so.1` -> graceful error).
+  - `niri`: Implemented native macOS backend `src/backend/metal.rs` utilizing Apple Metal viewport (`CAMetalLayer`) configured via `wgpu::Backends::METAL` (`wgpu 24` + `pollster 1.0`); hooked into Calloop event loop; established automatic macOS `XDG_RUNTIME_DIR` fallback under `std::env::temp_dir()`; verified live compositor execution via IPC (`version`, `outputs` at 2560x1600, `workspaces`, `action toggle-debug-tint`, and graceful shutdown `action quit`).
+- **Triple-Gate Approval**: PR #003 approved across QA (221/221 tests passed + live IPC verified), Security (safe handle binding and runtime directory permissions `0700`), and Code Quality (`cargo clippy --all-targets -- -D warnings` passed with 0 warnings).
+- **Next Sprint Target**: Milestone 3 - Wayland Protocol Socket & Local Client Presentation.

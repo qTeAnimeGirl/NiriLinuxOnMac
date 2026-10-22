@@ -103,21 +103,14 @@ where
     )
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`](crate::backend::renderer::Renderer)
-/// trait, from a given [`WindowAttributes`] struct, as well as given
-/// [`GlAttributes`] for further customization of the rendering pipeline and a
-/// corresponding [`WinitEventLoop`].
-pub fn init_from_attributes_with_gl_attr<R>(
+/// Create a new window and [`WinitEventLoop`] from a given [`WindowAttributes`] struct,
+/// without initializing an EGL graphics backend.
+pub fn init_window_and_event_loop(
     attributes: WindowAttributes,
-    gl_attributes: GlAttributes,
-) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
-where
-    R: From<GlesRenderer> + Bind<EGLSurface>,
-    crate::backend::SwapBuffersError: From<R::Error>,
-{
+) -> Result<(Arc<dyn WinitWindow>, WinitEventLoop), Error> {
     let span = info_span!("backend_winit", window = tracing::field::Empty);
     let _guard = span.enter();
-    info!("Initializing a winit backend");
+    info!("Initializing a winit window and event loop");
 
     let mut event_loop = EventLoop::builder().build().map_err(Error::EventLoopCreation)?;
 
@@ -154,9 +147,6 @@ where
     span.record("window", window.id().into_raw());
     debug!("Window created");
 
-    let winit_graphics_backend =
-        WinitGraphicsBackend::new_with_gl_attr(window.clone(), &span, gl_attributes)?;
-
     drop(_guard);
 
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
@@ -165,21 +155,38 @@ where
     #[cfg(not(target_os = "linux"))]
     let (ping, ping_source) = calloop::ping::make_ping().map_err(Error::Io)?;
 
-    Ok((
-        winit_graphics_backend,
-        WinitEventLoop {
-            inner: window_event_loop_inner,
-            fake_token: None,
-            event_loop,
-            #[cfg(not(target_os = "linux"))]
-            _ping: ping,
-            #[cfg(not(target_os = "linux"))]
-            ping_source,
-            initial_events,
-            pending_events: Vec::new(),
-            span,
-        },
-    ))
+    let winit_event_loop = WinitEventLoop {
+        inner: window_event_loop_inner,
+        fake_token: None,
+        event_loop,
+        #[cfg(not(target_os = "linux"))]
+        _ping: ping,
+        #[cfg(not(target_os = "linux"))]
+        ping_source,
+        initial_events,
+        pending_events: Vec::new(),
+        span,
+    };
+
+    Ok((window, winit_event_loop))
+}
+
+/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`](crate::backend::renderer::Renderer)
+/// trait, from a given [`WindowAttributes`] struct, as well as given
+/// [`GlAttributes`] for further customization of the rendering pipeline and a
+/// corresponding [`WinitEventLoop`].
+pub fn init_from_attributes_with_gl_attr<R>(
+    attributes: WindowAttributes,
+    gl_attributes: GlAttributes,
+) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
+where
+    R: From<GlesRenderer> + Bind<EGLSurface>,
+    crate::backend::SwapBuffersError: From<R::Error>,
+{
+    let (window, winit_event_loop) = init_window_and_event_loop(attributes)?;
+    let winit_graphics_backend =
+        WinitGraphicsBackend::new_with_gl_attr(window, &winit_event_loop.span, gl_attributes)?;
+    Ok((winit_graphics_backend, winit_event_loop))
 }
 
 /// Errors thrown by the `winit` backends

@@ -23,12 +23,19 @@ pub use winit::Winit;
 pub mod headless;
 pub use headless::Headless;
 
+#[cfg(target_os = "macos")]
+pub mod metal;
+#[cfg(target_os = "macos")]
+pub use metal::Metal;
+
 #[allow(clippy::large_enum_variant)]
 pub enum Backend {
     #[cfg(target_os = "linux")]
     Tty(Tty),
     Winit(Winit),
     Headless(Headless),
+    #[cfg(target_os = "macos")]
+    Metal(Metal),
 }
 
 #[derive(PartialEq, Eq)]
@@ -66,6 +73,8 @@ impl Backend {
             Backend::Tty(tty) => tty.init(niri),
             Backend::Winit(winit) => winit.init(niri),
             Backend::Headless(headless) => headless.init(niri),
+            #[cfg(target_os = "macos")]
+            Backend::Metal(metal) => metal.init(niri),
         }
     }
 
@@ -75,6 +84,8 @@ impl Backend {
             Backend::Tty(tty) => tty.seat_name(),
             Backend::Winit(winit) => winit.seat_name(),
             Backend::Headless(headless) => headless.seat_name(),
+            #[cfg(target_os = "macos")]
+            Backend::Metal(metal) => metal.seat_name(),
         }
     }
 
@@ -87,6 +98,8 @@ impl Backend {
             Backend::Tty(tty) => tty.with_primary_renderer(f),
             Backend::Winit(winit) => winit.with_primary_renderer(f),
             Backend::Headless(headless) => headless.with_primary_renderer(f),
+            #[cfg(target_os = "macos")]
+            Backend::Metal(metal) => metal.with_primary_renderer(f),
         }
     }
 
@@ -100,6 +113,8 @@ impl Backend {
             Backend::Tty(tty) => tty.primary_render_node(),
             Backend::Winit(winit) => winit.primary_render_node(),
             Backend::Headless(headless) => headless.primary_render_node(),
+            #[cfg(target_os = "macos")]
+            Backend::Metal(metal) => metal.primary_render_node(),
         }
     }
 
@@ -120,12 +135,25 @@ impl Backend {
                 let _ = target_presentation_time;
                 headless.render(niri, output)
             }
+            #[cfg(target_os = "macos")]
+            Backend::Metal(metal) => {
+                let _ = target_presentation_time;
+                metal.render(niri, output)
+            }
         }
     }
 
     pub fn mod_key(&self, config: &Config) -> ModKey {
         match self {
             Backend::Winit(_) => config.input.mod_key_nested.unwrap_or({
+                if let Some(ModKey::Alt) = config.input.mod_key {
+                    ModKey::Super
+                } else {
+                    ModKey::Alt
+                }
+            }),
+            #[cfg(target_os = "macos")]
+            Backend::Metal(_) => config.input.mod_key_nested.unwrap_or({
                 if let Some(ModKey::Alt) = config.input.mod_key {
                     ModKey::Super
                 } else {
@@ -162,6 +190,8 @@ impl Backend {
             Backend::Tty(tty) => tty.toggle_debug_tint(),
             Backend::Winit(winit) => winit.toggle_debug_tint(),
             Backend::Headless(_) => (),
+            #[cfg(target_os = "macos")]
+            Backend::Metal(metal) => metal.toggle_debug_tint(),
         }
     }
 
@@ -171,6 +201,8 @@ impl Backend {
             Backend::Tty(tty) => tty.import_dmabuf(dmabuf),
             Backend::Winit(winit) => winit.import_dmabuf(dmabuf),
             Backend::Headless(headless) => headless.import_dmabuf(dmabuf),
+            #[cfg(target_os = "macos")]
+            Backend::Metal(_) => false,
         }
     }
 
@@ -180,6 +212,8 @@ impl Backend {
             Backend::Tty(tty) => tty.early_import(_surface),
             Backend::Winit(_) => (),
             Backend::Headless(_) => (),
+            #[cfg(target_os = "macos")]
+            Backend::Metal(_) => (),
         }
     }
 
@@ -189,6 +223,8 @@ impl Backend {
             Backend::Tty(tty) => tty.ipc_outputs(),
             Backend::Winit(winit) => winit.ipc_outputs(),
             Backend::Headless(headless) => headless.ipc_outputs(),
+            #[cfg(target_os = "macos")]
+            Backend::Metal(metal) => metal.ipc_outputs(),
         }
     }
 
@@ -201,6 +237,8 @@ impl Backend {
             Backend::Tty(tty) => tty.primary_gbm_device(),
             Backend::Winit(winit) => winit.gbm_device(),
             Backend::Headless(_) => None,
+            #[cfg(target_os = "macos")]
+            Backend::Metal(_) => None,
         }
     }
 
@@ -275,6 +313,15 @@ impl Backend {
             v
         } else {
             panic!("backend is not Headless")
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn metal(&mut self) -> &mut Metal {
+        if let Self::Metal(v) = self {
+            v
+        } else {
+            panic!("backend is not Metal")
         }
     }
 }
