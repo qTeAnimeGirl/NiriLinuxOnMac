@@ -40,3 +40,4 @@ dist/
 *.log
 /agents/logs/test_reports/*.dump
 /agents/logs/test_reports/*.rgba
+.build/

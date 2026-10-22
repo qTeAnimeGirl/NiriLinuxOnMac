@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # vm/scripts/install_arch_assets.sh
 # Automated Arch Linux ARM Asset Installer & Bootstrapping Pipeline for Niri Linux MicroVM on macOS (Apple Silicon ARM64)
-# Downloads official Arch Linux ARM aarch64 kernel & matching virtio modules, extracts uncompressed Image,
-# builds static guest binaries (with pre-compiled fallbacks), and bundles custom Arch Linux initramfs.
+# Downloads official Arch Linux ARM aarch64 kernel, core packages providing pacman and shared libraries,
+# builds static guest binaries, configures network/DNS, SSL certs, and bundles a full Arch Linux ARM initramfs.
 
 set -euo pipefail
 
@@ -33,7 +33,7 @@ fetch_pkg() {
     local default_name="$3"
     local dest_file="$4"
 
-    if [[ -f "${dest_file}" ]]; then
+    if [[ -f "${dest_file}" && -s "${dest_file}" ]]; then
         echo "[CACHE] Using cached package: $(basename "${dest_file}")"
         return 0
     fi
@@ -56,10 +56,42 @@ fetch_pkg() {
     echo "[FETCH] Successfully downloaded $(basename "${dest_file}")."
 }
 
+find_or_fetch_pkg() {
+    local repo="$1"
+    local pkg_name="$2"
+
+    # Check existing files in IMAGES_DIR
+    local clean_name="${pkg_name//+/}"
+    for f in "${IMAGES_DIR}/${pkg_name}-"[0-9]*.pkg.tar.* "${IMAGES_DIR}/${clean_name}"*[0-9]*.pkg.tar.*; do
+        if [[ -f "$f" && -s "$f" ]]; then
+            echo "$f"
+            return 0
+        fi
+    done
+
+    # Fetch from mirror
+    local escaped_pkg="${pkg_name//+/%2B}"
+    local pattern="${escaped_pkg}-[0-9][^\"]*\.pkg\.tar\.[^\"]*"
+    local dest_file_name=""
+    dest_file_name=$(curl -s "${ARCH_MIRROR_PRIMARY}/${repo}/" | grep -o "${pattern}" | head -n 1 || true)
+    if [[ -z "${dest_file_name}" ]]; then
+        dest_file_name=$(curl -s "${ARCH_MIRROR_BACKUP}/${repo}/" | grep -o "${pattern}" | head -n 1 || true)
+    fi
+
+    if [[ -z "${dest_file_name}" ]]; then
+        echo "[ERROR] Could not find package ${pkg_name} in ${repo}!" >&2
+        return 1
+    fi
+
+    local target_path="${IMAGES_DIR}/${dest_file_name}"
+    fetch_pkg "${repo}" "${pattern}" "${dest_file_name}" "${target_path}" >&2
+    echo "${target_path}"
+}
+
 # 1a. Kernel package (linux-aarch64)
 LINUX_PKG_PATH=""
 for existing in "${IMAGES_DIR}"/linux-aarch64-*.pkg.tar.*; do
-    if [[ -f "${existing}" ]]; then
+    if [[ -f "${existing}" && -s "${existing}" ]]; then
         LINUX_PKG_PATH="${existing}"
         break
     fi
@@ -72,37 +104,66 @@ else
     echo "[CACHE] Using cached kernel package: $(basename "${LINUX_PKG_PATH}")"
 fi
 
-# 1b. Filesystem package (filesystem)
-FS_PKG_PATH=""
-for existing in "${IMAGES_DIR}"/filesystem-*.pkg.tar.*; do
-    if [[ -f "${existing}" ]]; then
-        FS_PKG_PATH="${existing}"
-        break
+# 1b. Core Arch Linux ARM packages providing pacman, bash, coreutils, curl, ssl, and runtime libraries
+CORE_PACKAGE_LIST=(
+    "filesystem"
+    "busybox"
+    "glibc"
+    "gcc-libs"
+    "libgcc"
+    "libstdc++"
+    "bash"
+    "coreutils"
+    "readline"
+    "ncurses"
+    "pacman"
+    "pacman-mirrorlist"
+    "archlinux-keyring"
+    "archlinuxarm-keyring"
+    "libarchive"
+    "curl"
+    "openssl"
+    "gpgme"
+    "libgpg-error"
+    "libassuan"
+    "libseccomp"
+    "zlib"
+    "bzip2"
+    "xz"
+    "zstd"
+    "lz4"
+    "acl"
+    "attr"
+    "libcap"
+    "gmp"
+    "e2fsprogs"
+    "libverto"
+    "icu"
+    "libxml2"
+    "ca-certificates"
+    "ca-certificates-utils"
+    "libnghttp2"
+    "libnghttp3"
+    "libngtcp2"
+    "libpsl"
+    "krb5"
+    "keyutils"
+    "libssh2"
+    "libidn2"
+    "libunistring"
+    "brotli"
+)
+
+RESOLVED_PACKAGES=()
+echo "[RESOLVE] Checking core Arch Linux ARM packages..."
+for pkg in "${CORE_PACKAGE_LIST[@]}"; do
+    repo="core"
+    if [[ "$pkg" == "busybox" ]]; then
+        repo="extra"
     fi
+    pkg_path=$(find_or_fetch_pkg "${repo}" "${pkg}")
+    RESOLVED_PACKAGES+=("${pkg_path}")
 done
-
-if [[ -z "${FS_PKG_PATH}" ]]; then
-    FS_PKG_PATH="${IMAGES_DIR}/filesystem-2025.10.12-1-any.pkg.tar.xz"
-    fetch_pkg "core" 'filesystem-[0-9][^"]*\.pkg\.tar\.[^"]*' "filesystem-2025.10.12-1-any.pkg.tar.xz" "${FS_PKG_PATH}"
-else
-    echo "[CACHE] Using cached filesystem package: $(basename "${FS_PKG_PATH}")"
-fi
-
-# 1c. Busybox package (static core utilities & shell)
-BUSYBOX_PKG_PATH=""
-for existing in "${IMAGES_DIR}"/busybox-*.pkg.tar.*; do
-    if [[ -f "${existing}" ]]; then
-        BUSYBOX_PKG_PATH="${existing}"
-        break
-    fi
-done
-
-if [[ -z "${BUSYBOX_PKG_PATH}" ]]; then
-    BUSYBOX_PKG_PATH="${IMAGES_DIR}/busybox-1.36.1-4-aarch64.pkg.tar.xz"
-    fetch_pkg "extra" 'busybox-[0-9][^"]*\.pkg\.tar\.[^"]*' "busybox-1.36.1-4-aarch64.pkg.tar.xz" "${BUSYBOX_PKG_PATH}"
-else
-    echo "[CACHE] Using cached busybox package: $(basename "${BUSYBOX_PKG_PATH}")"
-fi
 
 # --- STEP 2: Extract Uncompressed ARM64 Kernel Image ---
 KERNEL_IMAGE="${IMAGES_DIR}/Image"
@@ -164,29 +225,27 @@ echo "[BUNDLE] Assembling customized Arch Linux ARM initramfs..."
 STAGE_DIR=$(mktemp -d /tmp/arch-initramfs-stage-XXXXXX)
 pushd "${STAGE_DIR}" >/dev/null
 
-# 4a. Unpack Arch Linux base filesystem
-echo "[BUNDLE] Extracting Arch Linux filesystem structure..."
-tar -xf "${FS_PKG_PATH}" -C "${STAGE_DIR}" --exclude='.PKGINFO' --exclude='.MTREE' --exclude='.BUILDINFO'
+# 4a. Unpack all core Arch Linux ARM packages
+echo "[BUNDLE] Extracting Arch Linux packages..."
+for pkg_path in "${RESOLVED_PACKAGES[@]}"; do
+    echo "  -> Unpacking $(basename "${pkg_path}")..."
+    tar -xf "${pkg_path}" -C "${STAGE_DIR}" \
+        --exclude='.PKGINFO' \
+        --exclude='.MTREE' \
+        --exclude='.BUILDINFO' \
+        --exclude='.INSTALL' \
+        --exclude='usr/share/man/*' \
+        --exclude='usr/share/doc/*' \
+        2>/dev/null || true
+done
 
-# 4b. Unpack Arch Linux BusyBox
-echo "[BUNDLE] Installing Arch Linux BusyBox core utilities..."
-tar -xf "${BUSYBOX_PKG_PATH}" -C "${STAGE_DIR}" --exclude='.PKGINFO' --exclude='.MTREE' --exclude='.BUILDINFO' usr/bin/busybox
-
-# Ensure essential symlinks exist
-mkdir -p usr/bin usr/lib lib etc/profile.d
-ln -sf busybox usr/bin/sh
-ln -sf busybox usr/bin/bash
-ln -sf busybox usr/bin/ash
-ln -sf busybox usr/bin/mount
-ln -sf busybox usr/bin/umount
-ln -sf busybox usr/bin/insmod
-ln -sf busybox usr/bin/modprobe
-ln -sf busybox usr/bin/lsmod
-ln -sf busybox usr/bin/cttyhack
-ln -sf busybox usr/bin/ps
-ln -sf busybox usr/bin/kill
-ln -sf busybox usr/bin/ls
-ln -sf busybox usr/bin/cat
+# 4b. Ensure essential busybox applets and symlinks
+mkdir -p usr/bin usr/lib lib etc/profile.d usr/share/udhcpc
+for applet in find insmod lsmod rmmod modprobe ip ifconfig route udhcpc setsid cttyhack awk sed grep dmesg ping ping6 traceroute netstat which less vi reboot poweroff; do
+    if [[ ! -e "usr/bin/${applet}" ]]; then
+        ln -sf busybox "usr/bin/${applet}"
+    fi
+done
 
 # 4c. Set up official Arch Linux ARM os-release and identification
 mkdir -p usr/lib etc
@@ -215,56 +274,222 @@ echo "archlinux-arm" > etc/hostname
 
 cat << 'EOF' > etc/passwd
 root:x:0:0:root:/root:/bin/bash
+alpm:x:998:998:alpm:/var/empty:/usr/bin/nologin
 alarm:x:1000:1000:Arch User:/home/alarm:/bin/bash
 EOF
 
 cat << 'EOF' > etc/group
 root:x:0:root
 wheel:x:10:root,alarm
+alpm:x:998:
 users:x:100:alarm
 alarm:x:1000:
 EOF
 
-# 4d. Extract essential VirtIO and VSOCK kernel modules from Arch package
-echo "[BUNDLE] Extracting VirtIO and VSOCK kernel modules..."
+# 4d. Configure pacman.conf and mirrorlist
+mkdir -p etc/pacman.d var/lib/pacman/sync var/lib/pacman/local var/cache/pacman/pkg var/log
+cat << 'EOF' > etc/pacman.conf
+#
+# /etc/pacman.conf - Niri Arch Linux ARM MicroVM configuration
+#
+[options]
+HoldPkg     = pacman glibc
+Architecture = aarch64
+CheckSpace
+SigLevel    = Never
+LocalFileSigLevel = Optional
+DisableSandboxFilesystem
+DisableSandboxSyscalls
+ParallelDownloads = 5
+
+[core]
+Include = /etc/pacman.d/mirrorlist
+
+[extra]
+Include = /etc/pacman.d/mirrorlist
+
+[alarm]
+Include = /etc/pacman.d/mirrorlist
+
+[aur]
+Include = /etc/pacman.d/mirrorlist
+EOF
+
+cat << 'EOF' > etc/pacman.d/mirrorlist
+Server = http://fl.us.mirror.archlinuxarm.org/$arch/$repo
+Server = http://ca.us.mirror.archlinuxarm.org/$arch/$repo
+Server = http://nj.us.mirror.archlinuxarm.org/$arch/$repo
+Server = http://mirror.archlinuxarm.org/$arch/$repo
+EOF
+
+# 4e. Setup SSL certificate trust store
+mkdir -p etc/ssl/certs etc/ca-certificates/extracted
+if [[ -f /etc/ssl/cert.pem ]]; then
+    cp -f /etc/ssl/cert.pem etc/ssl/certs/ca-certificates.crt
+    cp -f /etc/ssl/cert.pem etc/ssl/cert.pem
+    cp -f /etc/ssl/cert.pem etc/ca-certificates/extracted/tls-ca-bundle.pem
+    ln -sf ca-certificates.crt etc/ssl/certs/ca-bundle.crt 2>/dev/null || true
+fi
+
+# 4f. Setup udhcpc default script
+cat << 'EOF' > usr/share/udhcpc/default.script
+#!/bin/sh
+[ -z "$1" ] && exit 1
+case "$1" in
+    deconfig)
+        ip addr flush dev "$interface" 2>/dev/null || ifconfig "$interface" 0.0.0.0 2>/dev/null || true
+        ;;
+    renew|bound)
+        ip addr add "${ip}/${subnet:-24}" dev "$interface" 2>/dev/null || ifconfig "$interface" "$ip" ${subnet:+netmask $subnet} up 2>/dev/null || true
+        if [ -n "$router" ]; then
+            for r in $router; do
+                ip route add default via "$r" dev "$interface" 2>/dev/null || route add default gw "$r" dev "$interface" 2>/dev/null || true
+            done
+        fi
+        if [ -n "$dns" ]; then
+            echo -n > /etc/resolv.conf
+            for d in $dns; do
+                echo "nameserver $d" >> /etc/resolv.conf
+            done
+        fi
+        ;;
+esac
+exit 0
+EOF
+chmod 755 usr/share/udhcpc/default.script
+
+# 4g. Setup Wayland environment in profile and bashrc
+cat << 'EOF' > etc/profile
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+export XDG_RUNTIME_DIR=/run/user/1000
+export WAYLAND_DISPLAY=wayland-0
+export MOZ_ENABLE_WAYLAND=1
+export GDK_BACKEND=wayland
+export QT_QPA_PLATFORM=wayland
+export CLUTTER_BACKEND=wayland
+export SDL_VIDEODRIVER=wayland
+export TERM=xterm-256color
+EOF
+
+mkdir -p root home/alarm
+cat << 'EOF' > root/.bashrc
+export XDG_RUNTIME_DIR=/run/user/1000
+export WAYLAND_DISPLAY=wayland-0
+export MOZ_ENABLE_WAYLAND=1
+export GDK_BACKEND=wayland
+export QT_QPA_PLATFORM=wayland
+export CLUTTER_BACKEND=wayland
+export SDL_VIDEODRIVER=wayland
+alias ll='ls -la'
+EOF
+cp -f root/.bashrc home/alarm/.bashrc
+
+# 4h. Create helper scripts /usr/bin/wayland-run and /usr/bin/install-firefox
+cat << 'EOF' > usr/bin/wayland-run
+#!/bin/sh
+export XDG_RUNTIME_DIR=/run/user/1000
+export WAYLAND_DISPLAY=wayland-0
+export MOZ_ENABLE_WAYLAND=1
+export GDK_BACKEND=wayland
+export QT_QPA_PLATFORM=wayland
+export CLUTTER_BACKEND=wayland
+export SDL_VIDEODRIVER=wayland
+exec "$@"
+EOF
+chmod 755 usr/bin/wayland-run
+
+cat << 'EOF' > usr/bin/install-firefox
+#!/bin/sh
+set -e
+echo "============================================================"
+echo "Installing Firefox via Arch Linux pacman..."
+echo "============================================================"
+pacman -Sy --noconfirm firefox
+echo "Launching Firefox under Wayland..."
+export XDG_RUNTIME_DIR=/run/user/1000
+export WAYLAND_DISPLAY=wayland-0
+export MOZ_ENABLE_WAYLAND=1
+export GDK_BACKEND=wayland
+export QT_QPA_PLATFORM=wayland
+export CLUTTER_BACKEND=wayland
+export SDL_VIDEODRIVER=wayland
+MOZ_ENABLE_WAYLAND=1 firefox &
+echo "Firefox launched in background!"
+EOF
+chmod 755 usr/bin/install-firefox
+
+# 4i. Extract essential VirtIO, network, and VSOCK kernel modules
+echo "[BUNDLE] Extracting VirtIO, Net, and VSOCK kernel modules..."
 tar -xf "${LINUX_PKG_PATH}" -C "${STAGE_DIR}" \
   'usr/lib/modules/*/kernel/drivers/char/hw_random/virtio-rng.ko' \
   'usr/lib/modules/*/kernel/drivers/gpu/drm/virtio/virtio-gpu.ko' \
+  'usr/lib/modules/*/kernel/drivers/net/net_failover.ko' \
   'usr/lib/modules/*/kernel/drivers/net/virtio_net.ko' \
   'usr/lib/modules/*/kernel/drivers/virtio/*' \
   'usr/lib/modules/*/kernel/fs/fuse/*' \
+  'usr/lib/modules/*/kernel/net/core/failover.ko' \
   'usr/lib/modules/*/kernel/net/vmw_vsock/*' 2>/dev/null || true
 
-# 4e. Inject guest binaries
+mkdir -p lib/modules
+find usr/lib/modules -name "*.ko" -exec cp -f {} lib/modules/ \; 2>/dev/null || true
+
+# 4j. Inject guest binaries
 cp -f "${GUEST_PROXY_BIN}" usr/bin/niri_vsock_guest
 cp -f "${GUEST_CLIENT_BIN}" usr/bin/wayland_window
 chmod 755 usr/bin/niri_vsock_guest usr/bin/wayland_window
 
-# 4f. Create Arch Linux PID 1 /init script
+# 4k. Create Arch Linux PID 1 /init script
 cat << 'EOF' > init
 #!/bin/sh
-export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
 export USER=root
 export HOME=/root
 export TERM=xterm-256color
 
-# Install all busybox applets
+export XDG_RUNTIME_DIR=/run/user/1000
+export WAYLAND_DISPLAY=wayland-0
+export MOZ_ENABLE_WAYLAND=1
+export GDK_BACKEND=wayland
+export QT_QPA_PLATFORM=wayland
+export CLUTTER_BACKEND=wayland
+export SDL_VIDEODRIVER=wayland
+
+# 0. Ensure busybox applets are linked
 /usr/bin/busybox --install -s /usr/bin 2>/dev/null || true
 
-# Mount essential pseudo-filesystems
+# 1. Mount essential pseudo-filesystems
 mount -t proc none /proc 2>/dev/null || true
 mount -t sysfs none /sys 2>/dev/null || true
 mount -t devtmpfs none /dev 2>/dev/null || true
 mount -t tmpfs none /run 2>/dev/null || true
 mount -t tmpfs none /tmp 2>/dev/null || true
 
-# Load VirtIO vsock and virtio-fs kernel drivers in order
-for mod in vsock vmw_vsock_virtio_transport_common vmw_vsock_virtio_transport fuse virtiofs virtio-gpu virtio_net virtio-rng; do
-    find /usr/lib/modules -name "${mod}.ko" -exec insmod {} \; 2>/dev/null || true
+# 2. Update dynamic linker cache
+/usr/bin/ldconfig 2>/dev/null || true
+
+# 3. Load VirtIO kernel drivers
+for mod in failover net_failover virtio_net vsock vmw_vsock_virtio_transport_common vmw_vsock_virtio_transport fuse virtiofs virtio-gpu virtio-rng; do
+    if [ -f "/lib/modules/${mod}.ko" ]; then
+        insmod "/lib/modules/${mod}.ko" 2>/dev/null || true
+    elif command -v find >/dev/null 2>&1; then
+        find /usr/lib/modules -name "${mod}.ko" -exec insmod {} \; 2>/dev/null || true
+    fi
 done
 
-# Setup runtime directories
-mkdir -p /run/user/1000 /dev/shm
+# 4. Setup network interface, DHCP, and DNS
+ip link set lo up 2>/dev/null || ifconfig lo 127.0.0.1 up 2>/dev/null || true
+ip link set eth0 up 2>/dev/null || ifconfig eth0 up 2>/dev/null || true
+udhcpc -i eth0 -n -q -t 3 -s /usr/share/udhcpc/default.script 2>/dev/null || udhcpc -i eth0 -n -q -t 3 2>/dev/null || true
+
+if [ ! -s /etc/resolv.conf ]; then
+    cat << 'RESEOF' > /etc/resolv.conf
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+RESEOF
+fi
+
+# 5. Setup runtime directories and permissions
+mkdir -p /run/user/1000 /dev/shm /tmp /var/log /var/cache/pacman/pkg /var/lib/pacman/local /var/lib/pacman/sync
 mount -t tmpfs none /dev/shm 2>/dev/null || true
 
 # Mount virtio-fs host share if tag exists
@@ -272,12 +497,11 @@ if grep -q virtiofs /proc/filesystems 2>/dev/null; then
     mount -t virtiofs host_share /dev/shm 2>/dev/null || true
 fi
 
-chmod 700 /run/user/1000
-chmod 1777 /dev/shm
+chmod 0777 /run/user/1000 2>/dev/null || true
+chmod 1777 /dev/shm 2>/dev/null || true
+chmod 1777 /tmp 2>/dev/null || true
 
-export XDG_RUNTIME_DIR=/run/user/1000
-export WAYLAND_DISPLAY=wayland-0
-
+# 6. Start vsock Wayland proxy
 echo "[GUEST INIT] Arch Linux ARM MicroVM booted."
 echo "[GUEST INIT] Starting vsock Wayland proxy..."
 /usr/bin/niri_vsock_guest &
@@ -291,10 +515,13 @@ while [ ! -S /run/user/1000/wayland-0 ] && [ $TRIES -lt 30 ]; do
 done
 
 if [ -S /run/user/1000/wayland-0 ]; then
-    echo "[GUEST INIT] Wayland socket /run/user/1000/wayland-0 ready!"
-    echo "[GUEST INIT] Launching static Wayland client window..."
-    /usr/bin/wayland_window &
-    CLIENT_PID=$!
+    chmod 0666 /run/user/1000/wayland-0
+    echo "[GUEST INIT] Wayland socket /run/user/1000/wayland-0 ready (mode 0666)!"
+    if [ -x /usr/bin/wayland_window ]; then
+        echo "[GUEST INIT] Launching static Wayland client window..."
+        /usr/bin/wayland_window &
+        CLIENT_PID=$!
+    fi
 else
     echo "[GUEST INIT WARN] Wayland socket not ready yet; client will retry on socket appearance."
 fi
@@ -308,8 +535,10 @@ echo " ██╔══██║██╔══██╗██║     ██╔�
 echo " ██║  ██║██║  ██║╚██████╗██║  ██║    ███████║███████╗"
 echo " ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝    ╚══════╝╚══════╝"
 echo "       Arch Linux ARM (aarch64) MicroVM for Niri"
-echo "  Kernel: $(uname -r) | Arch Linux ARM rolling"
-echo "  Wayland: /run/user/1000/wayland-0"
+echo "  Kernel: $(uname -r) | pacman ready"
+echo "  Network: $(ip -o -4 addr show eth0 2>/dev/null | awk '{print $4}' || echo 'configured')"
+echo "  Wayland: /run/user/1000/wayland-0 (0666)"
+echo "  Commands: pacman, wayland-run, install-firefox"
 echo "============================================================"
 echo "Interactive shell ready. Type commands below:"
 echo ""
@@ -324,13 +553,15 @@ elif [ -e /dev/ttyS0 ]; then
     CONSOLE="/dev/ttyS0"
 fi
 
-# Run interactive shell on console with job control enabled, respawning if exited
+# Run interactive login shell on console
 while true; do
     if [ -e "$CONSOLE" ]; then
-        setsid /usr/bin/cttyhack /bin/sh -i <"$CONSOLE" >"$CONSOLE" 2>&1 || \
-        /bin/sh -i <"$CONSOLE" >"$CONSOLE" 2>&1
+        setsid /usr/bin/cttyhack /bin/bash -l <"$CONSOLE" >"$CONSOLE" 2>&1 || \
+        setsid /usr/bin/cttyhack /bin/sh -l <"$CONSOLE" >"$CONSOLE" 2>&1 || \
+        /bin/bash -l <"$CONSOLE" >"$CONSOLE" 2>&1 || \
+        /bin/sh -l <"$CONSOLE" >"$CONSOLE" 2>&1
     else
-        /bin/sh -i
+        /bin/bash -l || /bin/sh -l
     fi
     echo "[GUEST] Shell exited. Respawning in 1s..."
     sleep 1
@@ -338,13 +569,13 @@ done
 EOF
 chmod 755 init
 
-# 4g. Repack initramfs
+# 4l. Repack initramfs
 echo "[BUNDLE] Repacking Arch Linux initramfs archive..."
-find . | cpio -H newc -o 2>/dev/null | gzip -9 > "${CUSTOM_INITRAMFS}"
+find . | cpio -H newc -o 2>/dev/null | gzip -1 > "${CUSTOM_INITRAMFS}"
 popd >/dev/null
 rm -rf "${STAGE_DIR}"
 
-echo "[BUNDLE] Created customized Arch Linux initramfs: ${CUSTOM_INITRAMFS}"
+echo "[BUNDLE] Created customized Arch Linux initramfs: ${CUSTOM_INITRAMFS} ($(stat -f%z "${CUSTOM_INITRAMFS}" 2>/dev/null || stat -c%s "${CUSTOM_INITRAMFS}") bytes)"
 
 # --- STEP 5: Compile & Sign Host Virtualization Launcher ---
 echo "[SIGN] Building and signing Apple Virtualization launcher..."

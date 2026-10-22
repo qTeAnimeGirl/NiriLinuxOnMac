@@ -27,7 +27,14 @@ public final class MicroVMManager: ObservableObject {
 
     public func sendCommand(_ cmd: String) {
         guard isRunning, let pipe = stdinPipe else { return }
-        let line = cmd.hasSuffix("\n") ? cmd : cmd + "\n"
+        var line = cmd
+        if line.hasSuffix("\r\n") {
+            // Already formatted
+        } else if line.hasSuffix("\n") {
+            line = String(line.dropLast()) + "\r\n"
+        } else {
+            line += "\r\n"
+        }
         if let data = line.data(using: .utf8) {
             pipe.fileHandleForWriting.write(data)
         }
@@ -194,10 +201,21 @@ public final class MicroVMManager: ObservableObject {
         }
     }
 
+    private func stripAnsiEscapes(_ text: String) -> String {
+        // Regex pattern to strip ANSI escape codes
+        return text.replacingOccurrences(of: "\\x1B\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression)
+    }
+
     private func appendTerminalOutput(_ text: String) {
-        let lines = text.components(separatedBy: .newlines)
-        for line in lines where !line.isEmpty {
-            self.terminalLines.append(line)
+        let clean = stripAnsiEscapes(text)
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let lines = clean.components(separatedBy: "\n")
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .newlines)
+            if !trimmed.isEmpty {
+                self.terminalLines.append(trimmed)
+            }
         }
         if self.terminalLines.count > 1000 {
             self.terminalLines.removeFirst(self.terminalLines.count - 1000)

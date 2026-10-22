@@ -144,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(parent) = Path::new(&socket_path).parent() {
         fs::create_dir_all(parent)?;
-        let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+        let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o777));
     }
 
     if Path::new(&socket_path).exists() {
@@ -158,7 +158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
 
     let listener = UnixListener::bind(&socket_path)?;
-    let _ = fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o700));
+    let _ = fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o666));
 
     let mut session_counter = 0u32;
 

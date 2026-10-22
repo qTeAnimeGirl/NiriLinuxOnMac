@@ -42,7 +42,16 @@
   - `smithay`: Added `init_window_and_event_loop` decoupling window/event loop instantiation from EGL context creation; replaced panicking `LazyLock::expect` in EGL loader with graceful `Result<Library, libloading::Error>` fallback (`libEGL.dylib` -> `libEGL.so.1` -> graceful error).
   - `niri`: Implemented native macOS backend `src/backend/metal.rs` utilizing Apple Metal viewport (`CAMetalLayer`) configured via `wgpu::Backends::METAL` (`wgpu 24` + `pollster 1.0`); hooked into Calloop event loop; established automatic macOS `XDG_RUNTIME_DIR` fallback under `std::env::temp_dir()`; verified live compositor execution via IPC (`version`, `outputs` at 2560x1600, `workspaces`, `action toggle-debug-tint`, and graceful shutdown `action quit`).
 - **Triple-Gate Approval**: PR #003 approved across QA (221/221 tests passed + live IPC verified), Security (safe handle binding and runtime directory permissions `0700`), and Code Quality (`cargo clippy --all-targets -- -D warnings` passed with 0 warnings).
-### 2026-10-22 - Milestone 3 & 4 Achieved: Notch Bypass, Cursor Capture, Linux MicroVM & virtio-vsock GPU Pipeline
+### 2026-10-22 - Milestone 6 Achieved: Automated Arch Linux ARM MicroVM Bootstrapping & Windowed Client Execution
+- **Patches Applied**:
+  - `vm/host/microvm_launcher.swift`: Added `VZVirtioNetworkDeviceConfiguration` with `VZNATNetworkDeviceAttachment()`, `VZVirtualMachineDelegate` for clean shutdown.
+  - `vm/scripts/install_arch_assets.sh`: Automated core Arch Linux ARM packages installer downloading directly from official mirrors (`http://fl.us.mirror.archlinuxarm.org`), unpacks real `pacman 7.1`, `bash`, `coreutils`, `openssl`, `curl`, and all dynamic runtime dependencies.
+  - `vm/guest/init.sh`: Injects dynamic networking via DHCP on `eth0`, DNS fallback, creates Wayland socket `/run/user/1000/wayland-0` with mode 0666, exports Wayland variables by default, adds helper scripts `/usr/bin/wayland-run` and `/usr/bin/install-firefox`.
+  - `apps/niri_mac_gui`: Added native interactive Arch Linux Terminal tab with quick commands (`pacman -Sy`, `install-firefox`, `wayland-run wayland_window &`), auto-scrolling, and clean ANSI filtering.
+  - `src/backend/metal.rs`: Enforces single-desktop workspace fullscreen scoping without leaking to all spaces.
+  - `scripts/package_app.sh`: Assembled standalone codesigned unified `dist/Niri.app`.
+- **Triple-Gate Approval**: PR #007 approved across QA (203/203 unit tests passed, live in-VM Wayland window verified in Niri), Security (Virtualization NAT sandboxing and memory safety), and Code Review.
+
 - **Patches Applied**:
   - `src/backend/metal.rs`:
     - Fullscreen borderless window mode with direct physical display query via AppKit/CoreGraphics (`NSScreen::mainScreen().frame`), setting `NSWindowStyleMaskBorderless`, `NSWindowCollectionBehaviorFullScreenAuxiliary`, window level 25 (`NSMainMenuWindowLevel + 1`), autohiding dock and menubar, achieving full hardware display resolution (`3420x2214` spanning behind camera notch).

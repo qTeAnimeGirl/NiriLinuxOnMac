@@ -412,7 +412,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    chmod(wayland_socket, 0700);
+    chmod(wayland_socket, 0666);
 
     if (listen(listen_fd, 16) < 0) {
         perror("listen");

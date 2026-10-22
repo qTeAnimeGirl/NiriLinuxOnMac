@@ -110,12 +110,15 @@ public struct LinuxTerminalView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
 
+                    quickButton("pacman -Sy")
+                    quickButton("install-firefox")
+                    quickButton("wayland-run wayland_window &")
                     quickButton("uname -a")
-                    quickButton("cat /etc/os-release")
+                    quickButton("ip addr show eth0")
+                    quickButton("curl -I https://archlinuxarm.org")
                     quickButton("ps aux")
-                    quickButton("ip a")
-                    quickButton("wayland_window &")
                     quickButton("ls -la /run/user/1000")
+                    quickButton("poweroff -f")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)

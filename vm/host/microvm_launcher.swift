@@ -307,6 +307,21 @@ func bridgeSocket(connection: VZVirtioSocketConnection, targetSocketPath: String
     }
 }
 
+// MARK: - VZVirtualMachineDelegate
+class VMDelegate: NSObject, VZVirtualMachineDelegate {
+    func guestDidStop(_ virtualMachine: VZVirtualMachine) {
+        print("\n[VM] Guest powered off cleanly.")
+        TerminalConfig.restore()
+        exit(0)
+    }
+
+    func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
+        fputs("\n[VM] Guest stopped with error: \(error.localizedDescription)\n", stderr)
+        TerminalConfig.restore()
+        exit(1)
+    }
+}
+
 // MARK: - VZVirtioSocketListenerDelegate
 class VsockBridgeDelegate: NSObject, VZVirtioSocketListenerDelegate {
     let waylandSocketPath: String
@@ -398,6 +413,11 @@ vmConfig.graphicsDevices = [graphicsConfig]
 let vsockConfig = VZVirtioSocketDeviceConfiguration()
 vmConfig.socketDevices = [vsockConfig]
 
+// virtio-net NAT network configuration for internet connectivity (pacman, firefox, etc.)
+let netConfig = VZVirtioNetworkDeviceConfiguration()
+netConfig.attachment = VZNATNetworkDeviceAttachment()
+vmConfig.networkDevices = [netConfig]
+
 // Optional disk
 if let diskURL = config.diskURL, FileManager.default.fileExists(atPath: diskURL.path) {
     do {
@@ -418,6 +438,8 @@ do {
 }
 
 let vm = VZVirtualMachine(configuration: vmConfig)
+var g_vmDelegate: VMDelegate? = VMDelegate()
+vm.delegate = g_vmDelegate
 
 // Set up vsock listener strongly retained to avoid ARC deallocation
 var g_vsockDelegate: VsockBridgeDelegate? = VsockBridgeDelegate(waylandSocketPath: config.waylandSocketPath)
