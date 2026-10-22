@@ -61,6 +61,7 @@ chmod 755 "${MACOS_DIR}/niri-vsock-host"
 echo "[COPY] Copying resources and configuration..."
 cp "${REPO_ROOT}/resources/default-config.kdl" "${RESOURCES_DIR}/"
 cp "${REPO_ROOT}/resources/cursor.rgba" "${RESOURCES_DIR}/"
+cp "${REPO_ROOT}/vm/scripts/install_arch_assets.sh" "${RESOURCES_DIR}/scripts/" 2>/dev/null || true
 cp "${REPO_ROOT}/vm/scripts/install_assets.sh" "${RESOURCES_DIR}/scripts/"
 cp "${REPO_ROOT}/vm/scripts/launch_vz.sh" "${RESOURCES_DIR}/scripts/"
 chmod 755 "${RESOURCES_DIR}/scripts"/*.sh

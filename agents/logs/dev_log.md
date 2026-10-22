@@ -100,3 +100,29 @@
   - `swiftc -O -warnings-as-errors` on `microvm_launcher.swift`: 0 warnings, 0 errors.
   - `vm/scripts/test_vm_client_in_niri.sh` and `test_full_pipeline.sh`: In-VM client mapped and focused in Niri layout in < 2 seconds.
 - **Triple-Gate Sign-off**: Certified in `PR_005_qa_report.md`, `PR_005_security_audit.md`, and `PR_005_approval.md`. Cleared for merge to `dev` and promotion to `main`.
+
+### [2026-10-22T03:30:00+01:00] Milestone 6 - Clean Arch Linux ARM MicroVM, In-App Terminal, Windowed Testing, & Single-Workspace Fullscreen
+- **Single-Workspace Fullscreen Scoping (`src/backend/metal.rs`)**:
+  - Removed `CanJoinAllSpaces (1)` and `Stationary (64)` flags from `bypass_macos_notch`.
+  - Configured collection behavior with `NSWindowCollectionBehaviorFullScreenAuxiliary (16) | NSWindowCollectionBehaviorMoveToActiveSpace (2) | NSWindowCollectionBehaviorParticipatesInCycle (32)`.
+  - Lowered window level from `25` (`NSMainMenuWindowLevel + 1`) to `0` (`NSNormalWindowLevel`), ensuring fullscreen notch bypass resides on a normal workspace and does not intrude into other spaces.
+- **Robust `XDG_RUNTIME_DIR` Enforcement (`src/main.rs`)**:
+  - Unified resolution for both default and custom `XDG_RUNTIME_DIR`: auto-creates directory and enforces POSIX permissions `0700` (`rwx------`) owned by the calling UID, eliminating `PermissionDenied` panics when launching Niri.
+- **Clean Arch Linux ARM MicroVM Pipeline (`vm/scripts/install_arch_assets.sh`)**:
+  - Automated download of official Arch Linux ARM `linux-aarch64` (7.2.11), `filesystem`, and `busybox` packages.
+  - Extracted uncompressed ARM64 Linux kernel `boot/Image` (48MB).
+  - Packaged standalone Arch Linux ARM `initramfs.cpio.gz` (3.1MB) containing `/etc/os-release`, VirtIO modules (`vsock`, `virtiofs`, `virtio-gpu`), prebuilt static binaries (`niri_vsock_guest`, `wayland_window`), and `/init` spawning interactive serial console on `/dev/hvc0`.
+- **In-App Interactive Terminal for Linux (`apps/niri_mac_gui`)**:
+  - Built `LinuxTerminalView.swift`: Integrated terminal console with live ANSI styling, auto-scroll, command history, and quick action chips (`uname -a`, `cat /etc/os-release`, `ps aux`, `ip a`, etc.).
+  - Connected `stdinPipe` in `MicroVMManager.swift` to pass keystrokes directly to the guest shell via serial console.
+  - Added "Open in Terminal.app" button.
+  - Enhanced `LauncherConfig.swift` asset discovery and defaulted to windowed mode (`isWindowed = true`).
+- **Strict Windowed Mode Testing & Verification**:
+  - `vm/scripts/test_vm_client_in_niri.sh` and `test_full_pipeline.sh`: Strictly tested in windowed mode (`NIRI_WINDOWED=1`).
+  - Both integration tests passed with 100% success in <2s, asserting that the Arch Linux client is presented and mapped in Niri.
+- **Validation**:
+  - `cargo test --workspace`: 226 tests passed, 0 failed.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: 0 warnings, 0 errors.
+  - `swiftc -warnings-as-errors`: 0 warnings, 0 errors.
+  - `codesign --verify --deep --strict dist/Niri.app`: 0 errors.
+- **Triple-Gate Sign-off**: Certified in `PR_006_qa_report.md`, `PR_006_security_audit.md`, and `PR_006_approval.md`. Cleared for merge to `dev` and promotion to `main`.

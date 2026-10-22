@@ -11,9 +11,9 @@ public final class LauncherConfig: ObservableObject {
     public static let shared = LauncherConfig()
 
     // MARK: - Screen & Display Parameters
-    @Published public var notchBypass: Bool = true
-    @Published public var isWindowed: Bool = false
-    @Published public var resolutionPreset: String = "Fullscreen Borderless"
+    @Published public var notchBypass: Bool = false
+    @Published public var isWindowed: Bool = true
+    @Published public var resolutionPreset: String = "1920x1080 (1080p FHD)"
     @Published public var customWidth: Int = 1920
     @Published public var customHeight: Int = 1080
     @Published public var selectedDisplayIndex: Int = 0
@@ -36,17 +36,17 @@ public final class LauncherConfig: ObservableObject {
     @Published public var waylandSocketOverride: String = ""
 
     // MARK: - Guest Launch
-    @Published public var startupCommand: String = "/usr/local/bin/wayland_window"
+    @Published public var startupCommand: String = "/bin/wayland_window"
 
     public static let resolutionPresets: [String] = [
-        "Fullscreen Borderless",
-        "3840x2160 (4K UHD)",
-        "2560x1440 (2K QHD)",
         "1920x1080 (1080p FHD)",
+        "2560x1440 (2K QHD)",
+        "3840x2160 (4K UHD)",
         "1728x1117 (MacBook Pro 16\" Native)",
         "1512x982 (MacBook Pro 14\" Native)",
         "1440x900 (MacBook Air Native)",
         "1280x800 (Compact)",
+        "Fullscreen Borderless",
         "Custom"
     ]
 
@@ -60,16 +60,25 @@ public final class LauncherConfig: ObservableObject {
     public func autoDiscoverAssets() {
         let fileManager = FileManager.default
 
+        let appSupportDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("Niri").path ?? ""
+
         // Detect project root relative to bundle or current directory
         let searchRoots: [String] = [
+            appSupportDir,
+            "\(appSupportDir)/vm_images",
+            "\(appSupportDir)/archlinux",
             Bundle.main.resourcePath ?? "",
+            "\(Bundle.main.resourcePath ?? "")/vm_images",
             Bundle.main.bundlePath,
             FileManager.default.currentDirectoryPath,
+            "\(FileManager.default.currentDirectoryPath)/vm/images",
             URL(fileURLWithPath: FileManager.default.currentDirectoryPath).deletingLastPathComponent().path
         ].filter { !$0.isEmpty }
 
         for root in searchRoots {
             let kernelCandidates = [
+                "\(root)/vm_images/Image",
+                "\(root)/vm_images/vmlinuz",
                 "\(root)/vm/images/Image",
                 "\(root)/vm/images/vmlinuz",
                 "\(root)/Image",
@@ -83,6 +92,7 @@ public final class LauncherConfig: ObservableObject {
             }
 
             let initrdCandidates = [
+                "\(root)/vm_images/initramfs.cpio.gz",
                 "\(root)/vm/images/initramfs.cpio.gz",
                 "\(root)/initramfs.cpio.gz"
             ]

@@ -725,14 +725,15 @@ unsafe fn bypass_macos_notch(ns_view_ptr: *mut c_void) {
     // 0 = NSWindowStyleMaskBorderless
     msg_send_void_usize(window, sel_set_style_mask, 0);
 
-    // FullScreenAuxiliary (16) | CanJoinAllSpaces (1) | Stationary (64) | IgnoresCycle (128)
-    msg_send_void_usize(window, sel_set_collection_behavior, 16 | 1 | 64 | 128);
+    // FullScreenAuxiliary (16) | MoveToActiveSpace (2) | ParticipatesInCycle (32)
+    // Remove CanJoinAllSpaces (1) and Stationary (64) so it stays strictly on its own workspace!
+    msg_send_void_usize(window, sel_set_collection_behavior, 16 | 2 | 32);
 
     // setFrame:full_frame display:YES animate:NO
     msg_send_void_rect_bool_bool(window, sel_set_frame, full_frame, true, false);
 
-    // Window level: NSMainMenuWindowLevel + 1 = 25 (renders over and behind the notch without obstruction)
-    msg_send_void_isize(window, sel_set_level, 25);
+    // Window level: NSNormalWindowLevel = 0 (belongs to its specific desktop workspace)
+    msg_send_void_isize(window, sel_set_level, 0);
 
     // Autohide Menu Bar and Dock for an immersive fullscreen experience
     let cls_app = objc_getClass(c"NSApplication".as_ptr());

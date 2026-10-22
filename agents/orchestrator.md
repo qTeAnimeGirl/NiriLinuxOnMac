@@ -73,5 +73,26 @@
     - `vsock_guest.rs`: Multi-threaded vsock $\leftrightarrow$ `/run/user/1000/wayland-0` proxy.
   - `scripts/package_app.sh`:
     - Packages standard macOS `.app` bundle `dist/Niri.app` containing ARM64 Mach-O binaries, bundled assets, Info.plist, and codesign with `vm/host/entitlements.plist` (`com.apple.security.virtualization`, `com.apple.security.hypervisor`).
-- **Triple-Gate Approval**: PR #005 certified across QA (226 tests passed + 0 clippy warnings + live in-compositor window presentation verified in <2s), Security (memory audits, bounded message sizes, zero command injection, mkstemp/unlink SHM isolation, minimal entitlements), and Code Review (clean SwiftUI/Rust architectures, zero compiler warnings, valid codesign).
-- **Promotion Target**: PR #005 approved for merge into `dev` and promotion to `main` with production release tag `v0.2.0-macos`.
+- **Triple-Gate Approval**: PR #005 certified across QA (226 tests passed + 0 clippy warnings + live in-compositor window presentation verified in <2s), Security (memory audits, bounded message sizes, zero command injection, mkstemp/unlink SHM isolation, minimal entitlements), and Code Review (clean SwiftUI/Rust architectures, zero compiler warnings, valid codesign). Merged to `dev` and promoted to `main` as `v0.2.0-macos`.
+
+### 2026-10-22 - Milestone 6 Achieved: Clean Arch Linux ARM MicroVM, In-App Terminal, Windowed Testing, & Single-Workspace Fullscreen
+- **Patches Applied**:
+  - `src/backend/metal.rs`:
+    - Fullscreen Notch Bypass Scoping: Removed `CanJoinAllSpaces (1)` and `Stationary (64)`.
+    - Applied `NSWindowCollectionBehaviorFullScreenAuxiliary (16) | NSWindowCollectionBehaviorMoveToActiveSpace (2) | NSWindowCollectionBehaviorParticipatesInCycle (32)`.
+    - Lowered window level from `25` to `0` (`NSNormalWindowLevel`), ensuring fullscreen notch bypass resides on a normal workspace and does not intrude into other desktops.
+  - `src/main.rs`:
+    - Hardened `XDG_RUNTIME_DIR`: Auto-creates directory with POSIX `0700` permissions on macOS for both default and custom paths, eliminating `PermissionDenied` panics.
+  - `vm/scripts/install_arch_assets.sh`:
+    - Automated Arch Linux ARM bootstrapping: downloads `linux-aarch64` (7.2.11), `filesystem`, and `busybox` from official Arch Linux ARM mirrors.
+    - Extracts uncompressed kernel `boot/Image` (48MB).
+    - Assembles custom Arch Linux ARM initramfs (3.1MB) containing `/etc/os-release`, VirtIO modules (`vsock`, `virtiofs`, `virtio-gpu`), prebuilt static binaries (`niri_vsock_guest`, `wayland_window`), and `/init` spawning interactive serial console on `/dev/hvc0`.
+  - `apps/niri_mac_gui`:
+    - `LinuxTerminalView.swift`: In-app interactive terminal console with live ANSI styling, auto-scroll, command history, and quick action chips (`uname -a`, `cat /etc/os-release`, `ps aux`, `ip a`, etc.).
+    - `MicroVMManager.swift`: Attached interactive `stdinPipe` and real-time terminal output streaming.
+    - `LauncherConfig.swift`: Fixed asset discovery across Application Support, Resources, and project roots; defaulted to windowed mode (`isWindowed = true`).
+  - `vm/scripts/test_vm_client_in_niri.sh` & `test_full_pipeline.sh`:
+    - Configured for strict windowed mode testing (`NIRI_WINDOWED=1`).
+    - Verified 100% pass rate in <2s with Arch Linux ARM client presented in Niri.
+- **Triple-Gate Approval**: PR #006 approved across QA (226 tests passed + strict windowed verification), Security (stdio isolation, 0700 XDG, Level 0 scoping), and Code Review (zero warnings, valid codesign).
+- **Promotion Target**: PR #006 cleared for merge into `dev` and promotion to `main` with production release tag `v0.3.0-macos`.

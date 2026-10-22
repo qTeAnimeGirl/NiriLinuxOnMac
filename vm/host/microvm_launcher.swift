@@ -20,6 +20,7 @@ struct LauncherConfig {
     var memoryMB: UInt64 = 2048
     var sharedDirPath: String = "/tmp/niri-shm"
     var vsockPort: UInt32 = 1024
+    var interactive: Bool = false
     var waylandSocketPath: String = {
         if let xdg = ProcessInfo.processInfo.environment["XDG_RUNTIME_DIR"] {
             let p1 = "\(xdg)/wayland-1"
@@ -32,6 +33,29 @@ struct LauncherConfig {
         return fallback
     }()
     var cmdline: String = "console=hvc0 root=/dev/vda rw init=/init quiet"
+}
+
+// MARK: - Interactive Terminal & Raw Mode Support
+struct TerminalConfig {
+    static var originalTermios = termios()
+    static var isRawModeActive = false
+
+    static func enableRawMode() {
+        guard isatty(STDIN_FILENO) != 0 else { return }
+        if tcgetattr(STDIN_FILENO, &originalTermios) == 0 {
+            var raw = originalTermios
+            cfmakeraw(&raw)
+            tcsetattr(STDIN_FILENO, TCSANOW, &raw)
+            isRawModeActive = true
+        }
+    }
+
+    static func restore() {
+        if isRawModeActive {
+            tcsetattr(STDIN_FILENO, TCSANOW, &originalTermios)
+            isRawModeActive = false
+        }
+    }
 }
 
 // MARK: - CLI Argument Parser
@@ -88,6 +112,8 @@ func parseArguments() -> LauncherConfig {
                 config.cmdline = args[i + 1]
                 i += 1
             }
+        case "--interactive", "-e", "--pty":
+            config.interactive = true
         case "--help", "-h":
             printUsage()
             exit(0)
@@ -113,6 +139,7 @@ func printUsage() {
       -s, --shared-dir <PATH>      Directory shared via virtio-fs (default: /tmp/niri-shm)
       -p, --vsock-port <PORT>      virtio-vsock listener port (default: 1024)
       -w, --wayland-socket <PATH>  Host Wayland socket to bridge into
+      -e, --interactive, --pty     Enable raw interactive PTY mode for serial console
       --cmdline <ARGS>             Linux kernel command-line arguments
       -h, --help                   Display this help message
     """)
@@ -302,6 +329,11 @@ class VsockBridgeDelegate: NSObject, VZVirtioSocketListenerDelegate {
 }
 
 // MARK: - Main Execution
+// Unbuffered stdio for instantaneous interactive keystrokes and output streaming
+setvbuf(stdout, nil, _IONBF, 0)
+setvbuf(stderr, nil, _IONBF, 0)
+setvbuf(stdin, nil, _IONBF, 0)
+
 guard VZVirtualMachine.isSupported else {
     fputs("[FATAL] Apple Virtualization.framework is not supported on this host hardware.\n", stderr)
     exit(1)
@@ -309,7 +341,17 @@ guard VZVirtualMachine.isSupported else {
 
 let config = parseArguments()
 
+// Configure interactive raw mode if requested or if attached to a live terminal
+if config.interactive || isatty(STDIN_FILENO) != 0 {
+    TerminalConfig.enableRawMode()
+}
+
+atexit {
+    TerminalConfig.restore()
+}
+
 guard let kernelURL = config.kernelURL, FileManager.default.fileExists(atPath: kernelURL.path) else {
+    TerminalConfig.restore()
     fputs("[FATAL] Missing or invalid Linux kernel path (--kernel <PATH>).\n", stderr)
     printUsage()
     exit(1)
@@ -414,10 +456,12 @@ vm.start { result in
 
 // Setup termination signals
 signal(SIGINT) { _ in
+    TerminalConfig.restore()
     print("\n[VM] Stopping MicroVM...")
     exit(0)
 }
 signal(SIGTERM) { _ in
+    TerminalConfig.restore()
     print("\n[VM] Terminating...")
     exit(0)
 }

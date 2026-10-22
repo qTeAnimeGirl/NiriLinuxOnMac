@@ -23,8 +23,11 @@ public final class AssetInstaller: ObservableObject {
         let fm = FileManager.default
         let cwd = fm.currentDirectoryPath
         let candidates = [
+            "\(cwd)/vm/scripts/install_arch_assets.sh",
             "\(cwd)/vm/scripts/install_assets.sh",
+            "\(Bundle.main.bundlePath)/Contents/Resources/scripts/install_arch_assets.sh",
             "\(Bundle.main.bundlePath)/Contents/Resources/scripts/install_assets.sh",
+            "\(Bundle.main.resourcePath ?? "")/scripts/install_arch_assets.sh",
             "\(Bundle.main.resourcePath ?? "")/scripts/install_assets.sh"
         ]
         for c in candidates where fm.fileExists(atPath: c) {

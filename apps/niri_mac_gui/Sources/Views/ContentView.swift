@@ -8,6 +8,7 @@ import SwiftUI
 public enum NavigationTab: String, CaseIterable, Identifiable {
     case dashboard = "Dashboard"
     case parameters = "Parameters"
+    case terminal = "Linux Terminal"
     case logs = "Live Logs"
     case about = "Diagnostics & About"
 
@@ -17,6 +18,7 @@ public enum NavigationTab: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard: return "gauge.with.dots.needle.bottom.50percent"
         case .parameters: return "slider.horizontal.3"
+        case .terminal: return "apple.terminal"
         case .logs: return "terminal"
         case .about: return "info.circle"
         }
@@ -96,6 +98,8 @@ public struct ContentView: View {
                     DashboardView(coordinator: coordinator)
                 case .parameters:
                     ParametersView(config: coordinator.config)
+                case .terminal:
+                    LinuxTerminalView(microvm: coordinator.microvm)
                 case .logs:
                     LogStreamView(logger: coordinator.logger)
                 case .about:

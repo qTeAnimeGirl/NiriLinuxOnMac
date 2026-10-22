@@ -25,6 +25,10 @@ fi
 TEST_RUNTIME=$(mktemp -d /tmp/niri-live-test-XXXXXX)
 chmod 700 "${TEST_RUNTIME}"
 export XDG_RUNTIME_DIR="${TEST_RUNTIME}"
+export NIRI_WINDOWED=1
+export NIRI_NOTCH_BYPASS=0
+export NIRI_WIDTH=1280
+export NIRI_HEIGHT=800
 
 echo "[NIRI] Starting Niri compositor in background..."
 "${REPO_ROOT}/target/debug/niri" > "${TEST_RUNTIME}/niri.log" 2>&1 &

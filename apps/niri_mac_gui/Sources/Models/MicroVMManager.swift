@@ -15,13 +15,29 @@ public final class MicroVMManager: ObservableObject {
     @Published public var memoryMB: Int = 0
     @Published public var bootDurationMs: Double = 0
     @Published public var vsockPort: UInt32 = 1024
+    @Published public var terminalLines: [String] = []
 
     private var process: Process?
+    private var stdinPipe: Pipe?
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
     private var bootStartTime: Date?
 
     public init() {}
+
+    public func sendCommand(_ cmd: String) {
+        guard isRunning, let pipe = stdinPipe else { return }
+        let line = cmd.hasSuffix("\n") ? cmd : cmd + "\n"
+        if let data = line.data(using: .utf8) {
+            pipe.fileHandleForWriting.write(data)
+        }
+    }
+
+    public func clearTerminal() {
+        DispatchQueue.main.async {
+            self.terminalLines.removeAll()
+        }
+    }
 
     public func findLauncherBinary() -> String? {
         let fm = FileManager.default
@@ -98,15 +114,21 @@ public final class MicroVMManager: ObservableObject {
 
         proc.arguments = args
 
+        let inPipe = Pipe()
         let outPipe = Pipe()
         let errPipe = Pipe()
+        proc.standardInput = inPipe
         proc.standardOutput = outPipe
         proc.standardError = errPipe
+        self.stdinPipe = inPipe
 
         outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             if let str = String(data: data, encoding: .utf8), !str.isEmpty {
                 LogManager.shared.append(source: .microvm, message: str, level: .info)
+                DispatchQueue.main.async {
+                    self?.appendTerminalOutput(str)
+                }
                 if str.contains("booted successfully") || str.contains("Linux MicroVM booted") {
                     if let start = self?.bootStartTime {
                         let ms = Date().timeIntervalSince(start) * 1000.0
@@ -118,10 +140,13 @@ public final class MicroVMManager: ObservableObject {
             }
         }
 
-        errPipe.fileHandleForReading.readabilityHandler = { handle in
+        errPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             if let str = String(data: data, encoding: .utf8), !str.isEmpty {
                 LogManager.shared.append(source: .microvm, message: str, level: .warn)
+                DispatchQueue.main.async {
+                    self?.appendTerminalOutput(str)
+                }
             }
         }
 
@@ -169,13 +194,25 @@ public final class MicroVMManager: ObservableObject {
         }
     }
 
+    private func appendTerminalOutput(_ text: String) {
+        let lines = text.components(separatedBy: .newlines)
+        for line in lines where !line.isEmpty {
+            self.terminalLines.append(line)
+        }
+        if self.terminalLines.count > 1000 {
+            self.terminalLines.removeFirst(self.terminalLines.count - 1000)
+        }
+    }
+
     private func handleTermination(_ proc: Process) {
         self.isRunning = false
         self.pid = 0
         self.process = nil
+        self.stdinPipe = nil
         self.stdoutPipe = nil
         self.stderrPipe = nil
 
         LogManager.shared.append(source: .microvm, message: "MicroVM process terminated (exit code: \(proc.terminationStatus))")
+        self.terminalLines.append("[MicroVM process terminated (exit code: \(proc.terminationStatus))]")
     }
 }

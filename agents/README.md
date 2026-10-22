@@ -30,7 +30,8 @@
 | #2 | `agent/smithay/decouple-macos` | Milestone 1: Platform Decoupling & Native macOS Darwin Compilation | ✅ PASS (221 tests) | ✅ PASS | ✅ APPROVED (clippy clean) | MERGED to `dev` |
 | #3 | `agent/smithay/appkit-metal-backend` | Milestone 2: Native AppKit Window Hosting & Apple Metal wgpu Pipeline | ✅ PASS (221 tests + IPC) | ✅ PASS | ✅ APPROVED (clippy clean) | MERGED to `dev` |
 | #4 | `agent/vm/virtio-pipeline` | Milestone 3 & 4: Linux MicroVM, virtio-vsock Wayland IPC, Notch Bypass & Cursor Presentation | ✅ PASS (226 tests + loopback) | ✅ PASS | ✅ APPROVED (clippy clean) | MERGED to `dev` |
-| #5 | `agent/app/unified-gui-runner` | Milestone 5: Unified Niri.app Launcher GUI, Automated Asset Pipeline, and End-to-End MicroVM Wayland Mapping | ✅ PASS (226 tests + live pipeline) | ✅ PASS (Sandboxing, Entitlements, mkstemp/unlink) | ✅ APPROVED (Zero warnings Swift/Rust, codesigned) | CLEARED for MERGE |
+| #5 | `agent/app/unified-gui-runner` | Milestone 5: Unified Niri.app Launcher GUI, Automated Asset Pipeline, and End-to-End MicroVM Wayland Mapping | ✅ PASS (226 tests + live pipeline) | ✅ PASS (Sandboxing, Entitlements, mkstemp/unlink) | ✅ APPROVED (Zero warnings Swift/Rust, codesigned) | MERGED to `dev` |
+| #6 | `agent/arch/arch-vm-gui-terminal` | Milestone 6: Clean Arch Linux ARM MicroVM, In-App Terminal, Windowed Testing, & Single-Workspace Fullscreen | ✅ PASS (226 tests + windowed live) | ✅ PASS (Stdio sandbox, 0700 XDG, Level 0 space) | ✅ APPROVED (Zero warnings Swift/Rust, codesigned) | CLEARED for MERGE |
 
 ---
 
