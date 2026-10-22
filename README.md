@@ -41,6 +41,10 @@ A native macOS port of the [Niri](https://github.com/niri-wm/niri) scrollable-ti
 - **Seamless Window Bridging**: Linux Wayland client windows render directly as subsurfaces and columns inside the host Niri compositor.
 - **Zero-Trust Multi-Agent Engineering**: Managed autonomously by a multi-agent engineering swarm following strict Triple-Gate review protocols.
 
+## Documentation & Engineering Handoff
+
+> **Master Architecture Document & Handoff Guide**: See [**`docs/ARCHITECTURE_AND_HANDOFF.md`**](docs/ARCHITECTURE_AND_HANDOFF.md) for the complete system specification, component map, diagnostic breakdown of complex Wayland client presentation, and the next-phase blueprint.
+
 ## Agent Operations Workspace
 
 See [`agents/`](agents/) for live sprint dashboards, architecture RFCs, role instructions, and review records:
@@ -48,6 +52,7 @@ See [`agents/`](agents/) for live sprint dashboards, architecture RFCs, role ins
 - **Sprint Manifest & Sync**: [`agents/orchestrator.md`](agents/orchestrator.md)
 - **Inter-Agent Protocols**: [`agents/protocol.md`](agents/protocol.md)
 - **Architecture Specifications**: [`agents/specs/`](agents/specs/)
+- **Master Handoff Guide**: [`docs/ARCHITECTURE_AND_HANDOFF.md`](docs/ARCHITECTURE_AND_HANDOFF.md)
 
 ## License
 
